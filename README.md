@@ -2,44 +2,54 @@
 
 **A self-hosted, payment-aware firewall for payment callbacks and webhooks.**
 
-Aegis sits in front of your backend and makes sure every payment event that reaches it
-(Razorpay, Cashfree, PhonePe, Stripe, ...) is **genuine, unique, in order and confirmed
-with the provider** — with zero changes to your application code.
+Aegis sits in front of your backend and forwards a payment event only when it is **genuine,
+unique, confirmed with the provider, and consistent with the payment's state** — with no change
+to your application code.
 
 ```
-Payment provider ──► Aegis ──► Your backend (private)
-                     verify · dedupe · order · confirm · log · replay
+Razorpay / Stripe ──► Aegis ──signed──► Your backend (private)
+                       verify · dedupe · confirm · state check · deliver · trace
 ```
 
 ## Why
 
-Forged or mishandled payment callbacks keep causing real losses. In 2026 alone, multiple
-public CVEs let attackers mark unpaid orders as paid by forging callbacks
-(e.g. CVE-2026-11575, CVE-2026-9832, CVE-2026-87978, CVE-2026-16738, CVE-2026-33661).
-Each team re-implements verification and gets one detail wrong. Aegis does it once, correctly.
+Forged or mishandled payment callbacks keep causing real losses. In 2026 alone, several public
+CVEs let attackers mark unpaid orders as paid by forging callbacks — CVE-2026-11575 (PhonePe
+plugin), CVE-2026-9832, CVE-2026-87978, CVE-2026-16738, CVE-2026-33661. Each team re-implements
+verification and gets one detail wrong. Aegis does it once, in one place.
 
-## Planned features
+## Architecture
 
-- **Fail-closed signature verification** per provider (refuses to run with empty/weak secrets)
-- **Confirm-with-provider**: re-checks payment status, order ID and amount via the provider API
-- **Replay & duplicate protection**: timestamp windows + event-ID dedupe
-- **Payment state machine**: rejects illegal transitions (e.g. `failed` after `captured`)
-- **Durable queue & replay** when your backend is down
-- **Forward signing / mTLS** so your backend only trusts Aegis
-- **Card-testing detection** from payment metadata (no raw card data — out of PCI scope)
-- **Event timeline & audit log**, and later an AI analyst to explain failures
+```
+Provider ─► Ingress ─► Kafka ─► Processor ─► PostgreSQL ─► Deliverer ─► Backend
+            verify               dedupe ·                  signed POST,
+            then ack             confirm with provider ·   retries, per-payment order
+                                 state machine
+```
+
+| | |
+|---|---|
+| Language | Java 25, Spring Boot 4 (virtual threads) |
+| Event log | Apache Kafka (KRaft) |
+| State & queues | PostgreSQL |
+| Observability | Micrometer · Prometheus · Grafana |
+| Deploy | Docker Compose on a single Ubuntu server |
+
+## Design
+
+- [High-level design](docs/design/HLD.md) — goals, architecture, guarantees, failure behaviour, scaling
+- [Low-level design](docs/design/LLD.md) — flows, state machine, schema, APIs, config
+- [Decisions](docs/design/DECISIONS.md) — every technology choice and why
 
 ## Milestones
 
 | # | Milestone | Status |
 |---|---|---|
-| 0 | **Exploit Lab** — reproduce real callback CVEs in Docker, prove Aegis blocks them | planned |
-| 1 | Webhook integrity core (verify, dedupe, confirm, forward) | planned |
-| 2 | Durable queue, replay, state machine, observability | planned |
-| 3 | Partner API protection (mTLS/HMAC, rate limits) | planned |
-| 4 | Card-testing / risk rules | planned |
-| 5 | AI analyst + rule simulation | planned |
+| M0 | Exploit Lab — reproduce real callback CVEs in Docker | design done |
+| M1 | Integrity core for Razorpay (verify, dedupe, confirm, state machine, deliver, admin) | design done |
+| M2 | Stripe adapter, load + chaos tests, published benchmarks | planned |
+| M3 | Partner API protection (mTLS/HMAC, rate limits) | planned |
+| M4 | Card-testing / risk detection | planned |
+| M5 | AI analyst with rule simulation | planned |
 
-## Status
-
-Early design stage. This is a learning-in-public project.
+Learning-in-public project. Aegis never handles raw card data.
