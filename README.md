@@ -52,6 +52,24 @@ Backend ─► Verify API ── same engine ──► PostgreSQL ─► Deliver
 - [Decisions](docs/design/DECISIONS.md) — every choice, why, and the design review log
 - [Exploit Lab](docs/design/EXPLOIT-LAB.md) — reproducible attacks that prove the protection
 
+## Engineering
+
+- [Code architecture](docs/engineering/ARCHITECTURE.md) — hexagonal layout, dependency rules, design patterns, provider plugins
+- [CI/CD and deployment](docs/engineering/CICD.md) — pipelines, deployment target, quality gates
+- [Features](docs/features/README.md) — backlog and the feature-by-feature workflow
+- [AGENTS.md](AGENTS.md) — rules and workflow for AI coding agents and contributors
+
+## Development
+
+Requirements: JDK 25, Docker (Docker Desktop or Colima).
+
+```bash
+scripts/setup-dev.sh                                      # git hooks + toolchain check
+./mvnw verify                                             # full build: format, tests, architecture, integration, coverage
+docker compose -f deploy/compose.yaml up -d postgres kafka  # local infrastructure
+./mvnw -pl aegis-service spring-boot:run                  # run the service
+```
+
 ## Milestones
 
 | # | Milestone | Status |

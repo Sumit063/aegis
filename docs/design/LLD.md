@@ -372,20 +372,20 @@ bodies is masked.
 
 ## 14. Code layout
 
+Hexagonal layout; full package map, dependency rules and patterns in
+[`docs/engineering/ARCHITECTURE.md`](../engineering/ARCHITECTURE.md).
+
 ```
-src/main/java/dev/aegis/
-  config/      YAML binding, fail-closed validation
-  ingress/     IngressController
-  verify/      VerifyController
-  provider/    ProviderAdapter, razorpay/
-  claim/       ClaimConsumer, ConfirmWorker, RecheckWorker, ClaimEvaluator
-  domain/      Order, Transaction, state machines, NotificationRules
-  delivery/    DeliveryWorker, RequestSigner, Backoff
-  admin/       AdminController
-  store/       repositories (JdbcClient, plain SQL)
-src/main/resources/db/migration/   Flyway SQL
-deploy/        compose.yaml, prometheus, grafana
-lab/           M0 Exploit Lab
+aegis-service/src/main/java/dev/aegis/
+  domain/          targets, transactions, claims, notifications, state machines, value objects
+  application/     port/in (use cases), port/out (repositories, claim log, outbox), service/
+  provider/        spi/ (capabilities, registry, signature schemes), razorpay/, …
+  adapter/in/      web/ (Ingress, Verify, Admin controllers), kafka/ (ClaimConsumer), scheduler/ (workers)
+  adapter/out/     persistence/ (JPA), kafka/ (claim log), http/ (deliveries)
+  config/          properties, roles, fail-closed validation
+aegis-service/src/main/resources/db/migration/   Flyway SQL
+deploy/            compose.yaml, deploy.sh, runner/
+lab/               M0 Exploit Lab modules
 ```
 
 ## 15. Deployment (single Ubuntu host, user `aegis`)

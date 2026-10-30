@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  commit-lint:
+    name: Commit messages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check Conventional Commits
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then range="$PR_BASE..$PR_HEAD"; else range="$BEFORE..$SHA"; fi
+          # New branch or force push: the "before" commit may not exist; check the pushed commit only.
+          if ! git cat-file -e "${range%%..*}^{commit}" 2>/dev/null; then range="$SHA~1..$SHA"; fi
+          scripts/check-commit-msg.sh --range "$range"
+
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Verify (format, tests, architecture, integration, coverage)
+        run: ./mvnw -B -ntp verify
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports
+          path: |
+            aegis-service/target/surefire-reports/
+            aegis-service/target/failsafe-reports/
+            aegis-service/target/site/jacoco/
+          retention-days: 14
+      - name: Upload service jar
+        uses: actions/upload-artifact@v7
+        with:
+          name: aegis-jar
+          path: aegis-service/target/aegis.jar
+          retention-days: 7
+
+  image:
+    name: Container image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [commit-lint, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: aegis-jar
+          path: aegis-service/target
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image name
+        id: meta
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aegis" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ github.sha }}
+            ${{ steps.meta.outputs.image }}:main
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

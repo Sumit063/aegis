@@ -8,12 +8,13 @@ Each decision: what, why, and what was rejected. Change a decision only by editi
 |---|---|---|
 | Language | **Java 25 (LTS)** | Mature, widely known; virtual threads make blocking I/O (provider API calls, backend POSTs) cheap at high concurrency. |
 | Framework | **Spring Boot 4** (Spring MVC on virtual threads) | Production-proven; MVC + virtual threads is simpler to debug than reactive WebFlux at the same throughput for this I/O pattern. |
-| Build | Maven, single module | One deployable; packages separate the components. |
+| Build | Maven multi-module: `aegis-service` (the deployable) + lab modules (M0) | One deployable; lab apps build alongside but ship separately. |
+| Code quality | Spotless (Palantir Java Format), ArchUnit, JaCoCo ≥ 80 %, Maven Enforcer | D25 |
 | Event log | **Apache Kafka 4.x (KRaft)** | D1 |
 | System of record | **PostgreSQL 17** | D2 |
 | Cache / counters | **None until M4; then Redis** | Nothing before partner rate limits needs it. |
 | Kafka client | Spring for Apache Kafka | Idempotent producer; manual offset commit after DB commit. |
-| DB access | Spring `JdbcClient` (plain SQL) | Explicit SQL and explicit locks. JPA rejected: it hides locking and queries, the heart of this system. |
+| DB access | **Spring Data JPA** (Hibernate) + explicit native queries where needed | Industry-standard repositories and entity mapping behind persistence ports. Locking stays explicit: `@Version`, `@Lock(PESSIMISTIC_WRITE)`, and native SQL for `SKIP LOCKED` and `ON CONFLICT` (D23). |
 | Migrations | Flyway | Versioned SQL. |
 | HTTP client | JDK `HttpClient` | Built in, per-request timeouts. |
 | Config | YAML in repo + secrets from env | Reviewable; validated at startup; fail-closed. |
@@ -122,6 +123,41 @@ Real vulnerable plugin versions are not always still published, and a real sandb
 a leaked secret or a contradicting provider state. A reference merchant with one switch per flaw,
 plus a Razorpay-compatible mock gateway, makes every exploit reproducible; real plugins are used
 additionally where available.
+
+### D21 — Hexagonal architecture, enforced
+Domain and application are framework-free and depend only on ports; adapters and providers plug in
+from outside. ArchUnit checks the rules on every build (ARCHITECTURE §3). Rejected: layered
+"controller → service → repository" with shared JPA entities everywhere — it couples payment rules
+to the database model and every provider.
+
+### D22 — Providers as plugins with capability interfaces
+Each provider (Razorpay, Stripe, QR, BBPS, recharge aggregators, card networks such as Mastercard)
+is a package implementing only the SPI capabilities it supports, registered through a
+`ProviderRegistry`, and must pass a shared contract test suite. Signature algorithms are
+`SignatureScheme` strategies. Rejected: one large `ProviderAdapter` interface (forces fake
+implementations) and provider `if` branches in the core.
+
+### D23 — JPA with explicit locking
+Spring Data JPA repositories implement persistence ports; JPA entities stay in
+`adapter.out.persistence`, separate from domain objects. `@Version` on mutable entities,
+pessimistic locks for transitions (target → transaction), native SQL for `SKIP LOCKED` queue claims
+and `ON CONFLICT` inserts, `open-in-view=false`, `ddl-auto=validate`, Flyway owns the schema.
+Trade-off: mapping code between entities and domain objects, accepted for a framework-free core.
+
+### D24 — Delivery pipeline: CI on GitHub, CD pulled by the host
+CI runs on GitHub-hosted runners; images go to GitHub Container Registry tagged by commit SHA. The
+production host runs a self-hosted runner that connects outbound, used only for the deploy job on
+`main`; deploys are health-gated with automatic rollback. Secrets stay on the host. Rejected: SSH or
+Tailscale keys stored in GitHub. Details: `docs/engineering/CICD.md`.
+
+### D25 — Quality gates on every change
+Pre-commit (format, secret patterns), commit-msg (Conventional Commits), pre-push (`./mvnw verify`)
+locally; the same checks in CI. Coverage ≥ 80 % on domain and application. No Lombok — records and
+IDE generation cover it without annotation processing.
+
+### D26 — Feature-by-feature delivery
+Every feature has a reviewed design note in `docs/features/` before code, and ships with its tests
+in small Conventional Commits. AI agents follow `AGENTS.md` and the project skills.
 
 ## Design review log
 

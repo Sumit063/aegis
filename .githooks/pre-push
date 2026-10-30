@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Runs the full build before anything leaves the machine.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+echo "▶ pre-push: ./mvnw verify (skip only by fixing the build)"
+./mvnw -q -B verify

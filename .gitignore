@@ -1,9 +1,19 @@
-.env
-*.env
-secrets/
-bin/
+# Build output
 target/
 build/
+bin/
+
+# Secrets — never committed (deploy/.env.example is the template)
+.env
+*.env
+!*.env.example
+secrets/
+
+# IDEs and OS
 .idea/
+*.iml
 .vscode/
 .DS_Store
+
+# Local AI agent state (project skills in .claude/skills are committed)
+.claude/settings.local.json

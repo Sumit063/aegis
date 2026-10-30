@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Enforces Conventional Commit messages.
+exec "$(git rev-parse --show-toplevel)/scripts/check-commit-msg.sh" "$1"

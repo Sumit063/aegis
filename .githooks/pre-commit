@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Blocks commits that are unformatted or that contain likely secrets.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+staged="$(git diff --cached --name-only --diff-filter=ACM)"
+[[ -z "$staged" ]] && exit 0
+
+# 1. Secrets: refuse obvious credentials and env files.
+if echo "$staged" | grep -Eq '(^|/)\.env$|(^|/)[^/]*\.env$' && ! echo "$staged" | grep -q '\.env\.example$'; then
+  echo "✗ Refusing to commit an .env file. Secrets stay out of git." >&2
+  exit 1
+fi
+if git diff --cached -U0 | grep -E '^\+' | grep -Eiq '(rzp_live_[A-Za-z0-9]+|sk_live_[A-Za-z0-9]+|-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16})'; then
+  echo "✗ Staged changes look like they contain a live credential or private key." >&2
+  exit 1
+fi
+
+# 2. Formatting: only when Java or POM files changed.
+if echo "$staged" | grep -Eq '\.java$|pom\.xml$'; then
+  if ! ./mvnw -q -B spotless:check >/dev/null 2>&1; then
+    echo "✗ Code is not formatted. Run: ./mvnw spotless:apply" >&2
+    exit 1
+  fi
+fi
