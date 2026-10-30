@@ -30,7 +30,7 @@ retries.
 
 | Entity | One row per | Key states |
 |---|---|---|
-| **Order** | provider order (`order_…`) | `OPEN` → `PAID` |
+| **Order** (payment target) | provider order (`order_…`), or (M2) dynamic QR code (`qr_…`) | `OPEN` → `PAID` |
 | **Transaction** | provider payment, refund, or (M3) fulfilment | per kind, below |
 | **Claim** | inbound message (webhook, verify call, recheck) | `CONFIRMING → ACCEPTED \| STALE \| REJECTED \| IGNORED \| HELD` |
 | **Notification** | real state change worth telling the backend | — (immutable, stable ID) |
@@ -61,6 +61,18 @@ success, alert); `SUCCEEDED → REVERSED`. Only a provider-confirmed final `FAIL
 
 **ORDER**: `OPEN` → `PAID` when its first payment reaches `CAPTURED`. Never leaves `PAID`.
 
+**Payment targets.** The `orders` table holds every "thing a payment is made against", with a
+`kind` and a `usage`:
+
+| kind | usage | Behaviour |
+|---|---|---|
+| `ORDER` | `SINGLE` | As above: `order.paid` once, further captures `order.overpaid` |
+| `QR_CODE` (M2) | `SINGLE` (fixed amount) | Identical to an order |
+| `QR_CODE` (M2) | `MULTIPLE` | Stays `OPEN` until the gateway closes it (`CLOSED`); every captured payment emits `qr.payment_received` |
+
+The amount check uses the target's fixed amount; a variable-amount QR has none, so only currency
+and target membership are checked.
+
 ### 2.2 Notifications
 
 | Notification | Emitted when | Subject (unique per type) |
@@ -69,6 +81,7 @@ success, alert); `SUCCEEDED → REVERSED`. Only a provider-confirmed final `FAIL
 | `order.overpaid` | a payment is `CAPTURED` on an already `PAID` order | payment |
 | `payment.authorized` | payment → `AUTHORIZED` (manual-capture merchants; opt-in) | payment |
 | `payment.failed` | payment → `FAILED` **while its order is still `OPEN`** | payment |
+| `qr.payment_received` (M2) | payment `CAPTURED` on a multi-use QR | payment |
 | `refund.processed` / `refund.failed` | refund → `PROCESSED` / `FAILED` | refund |
 | `fulfilment.succeeded` / `.failed` / `.late_success` / `.reversed` (M3) | fulfilment transitions | fulfilment |
 
@@ -116,11 +129,12 @@ Commit, **then** commit the Kafka offset. A replay after a crash hits the dedupe
 | Check | Fail → |
 |---|---|
 | Transaction exists | `REJECTED (not_found)` |
-| Payment has an order | `IGNORED (no_order)` — orderless payments unsupported in M1 |
+| Payment has a target (order; QR code from M2) | `IGNORED (no_target)` + alert |
 | Claim's order ID (if any) equals the payment's order ID | `REJECTED (order_mismatch)` |
 | Payment amount and currency equal the order's | `REJECTED (amount_mismatch)` |
 | Provider state is not *contradicting* the claim (e.g. claim `captured`, provider `failed`) | `REJECTED (contradicted)` |
 | Provider state is not *behind* the claim (claim `captured`, provider still `authorized`) | retry; after 3 tries `REJECTED (unconfirmed)` |
+| Refund: belongs to the payment, and total refunded ≤ payment amount | `REJECTED (refund_mismatch)` |
 
 3. **Transition** in one database transaction:
    `SELECT … FROM orders WHERE … FOR UPDATE` (create if absent), then the transaction row
@@ -239,8 +253,10 @@ claims          id uuid PK, source_id, origin (WEBHOOK|VERIFY|RECHECK), dedupe_k
                 idx (next_attempt_at) WHERE status = 'CONFIRMING'
                 idx (source_id, provider_order_id), (received_at)
 
-orders          id uuid PK, source_id, provider_order_id, merchant_order_ref,
-                amount_minor bigint, currency char(3), state (OPEN|PAID),
+orders          id uuid PK, source_id, kind (ORDER|QR_CODE), usage (SINGLE|MULTIPLE),
+                provider_order_id, merchant_order_ref,
+                amount_minor bigint NULL (NULL = variable-amount QR), currency char(3),
+                state (OPEN|PAID|CLOSED),
                 paid_by_txn_id, version int, created_at, updated_at
                 UNIQUE (source_id, provider_order_id)
 
@@ -293,10 +309,17 @@ public interface ProviderAdapter {
   (basic auth, key ID + key secret).
 - Claim types handled: `payment.authorized`, `payment.captured`, `payment.failed`, `order.paid`,
   `refund.processed`, `refund.failed`. Others → `IGNORED` (recorded).
-- Unsupported in M1 (→ `IGNORED`, alert): orderless payments, partial-payment orders.
+- Recorded but not interpreted (→ `IGNORED`, alert): payments with no target, partial-payment
+  orders, disputes/chargebacks (`payment.dispute.*`). Each is a future adapter extension, not a
+  core change.
 
-Stripe (M2) maps PaymentIntent → order, Charge → payment. Recharge aggregators (M3) implement the
-same interface with `TxnKind.FULFILMENT`.
+**Razorpay dynamic QR (M2)**: `qr_code.credited` webhooks; truth from the QR code
+(`GET /v1/payments/qr_codes/{id}`: fixed amount, usage, status) and the payment. `merchantOrderRef`
+comes from the QR code's reference fields as returned by the API.
+
+**Stripe (M2)** maps PaymentIntent → order, Charge → payment.
+**Recharge aggregators and BBPS (M3)** implement the same interface with `TxnKind.FULFILMENT`; the
+"truth" call is the status-check API.
 
 ## 11. Configuration
 
@@ -374,6 +397,10 @@ Docker Compose: `postgres`, `kafka` (KRaft, single node), `aegis` (all roles), `
 - **Single-broker durability:** with one broker, an acknowledged message lives on one disk and
   Kafka acks before fsync. Set `log.flush.interval.messages=1` on this host so an ack means
   "on disk". Multi-host deployments drop this and use RF 3 / `min.insync.replicas=2`.
+- **Backups:** nightly `pg_dump` of PostgreSQL to a separate disk, kept 14 days, with a monthly
+  restore test. Kafka needs no backup: anything not yet in PostgreSQL is still within the
+  providers' retry window, and rechecks recover the rest.
+- **Health:** `/actuator/health` per role; Compose restarts unhealthy containers.
 
 ## 16. Test catalogue
 
@@ -400,3 +427,8 @@ the backend) and must pass before a release.
 | T16 | Late authorisation (`FAILED` → `CAPTURED`) | `order.paid` emitted |
 | T17 | Passthrough destination, Route A first | legacy app still receives the webhook once |
 | T18 | Empty or short secret in config | application refuses to start |
+| T19 | Refund claim exceeding the captured amount | `REJECTED (refund_mismatch)` |
+| T20 | Single-use QR paid twice (M2) | one `order.paid`, one `order.overpaid` |
+| T21 | Multi-use QR, two payments (M2) | two `qr.payment_received`, QR stays `OPEN` |
+| T22 | Fulfilment `FAILED` claim while aggregator says `PENDING` (M3) | no `fulfilment.failed`; recheck scheduled |
+| T23 | Fulfilment `SUCCEEDED` after `fulfilment.failed` was sent (M3) | `fulfilment.late_success`, alert |

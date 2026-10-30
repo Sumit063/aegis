@@ -46,10 +46,11 @@ Backend ─► Verify API ── same engine ──► PostgreSQL ─► Deliver
 
 ## Design
 
-- [Payment flows](docs/design/PAYMENT-FLOWS.md) — how checkout, webhooks and recharges work, and where Aegis stands
-- [High-level design](docs/design/HLD.md) — goals, architecture, flows, guarantees, failures, scaling
+- [Payment flows](docs/design/PAYMENT-FLOWS.md) — where Aegis sits, use cases, checkout, UPI, QR, recharges and bill payments
+- [High-level design](docs/design/HLD.md) — goals, architecture, flows, zero-trust security model, failures, scaling
 - [Low-level design](docs/design/LLD.md) — state machines, APIs, schema, config, test catalogue
 - [Decisions](docs/design/DECISIONS.md) — every choice, why, and the design review log
+- [Exploit Lab](docs/design/EXPLOIT-LAB.md) — reproducible attacks that prove the protection
 
 ## Milestones
 
@@ -57,7 +58,7 @@ Backend ─► Verify API ── same engine ──► PostgreSQL ─► Deliver
 |---|---|---|
 | M0 | Exploit Lab — reproduce real callback CVEs in Docker | design done |
 | M1 | Razorpay core — webhooks, Verify API, re-checks, delivery, admin | design done |
-| M2 | Stripe adapter, load and chaos tests, benchmarks | planned |
+| M2 | Dynamic QR payments, Stripe adapter, load and chaos tests, benchmarks | planned |
 | M3 | Recharge / bill-payment fulfilment callbacks | planned |
 | M4 | Partner API protection (mTLS/HMAC, rate limits) | planned |
 | M5 | Card-testing / risk detection | planned |

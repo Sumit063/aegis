@@ -1,6 +1,7 @@
 # Aegis — High-Level Design
 
-Read [PAYMENT-FLOWS.md](PAYMENT-FLOWS.md) first for the payment flow and the terms used here.
+Read [PAYMENT-FLOWS.md](PAYMENT-FLOWS.md) first: where Aegis sits, its use cases, the payment
+flows (checkout, UPI, QR, recharges, bill payments) and the terms used here.
 
 ## 1. Problem
 
@@ -109,10 +110,16 @@ A transaction left in a non-final state (payment `AUTHORIZED`, recharge `PENDING
 with the provider on a backoff schedule, even if no further callback arrives. Still unresolved
 after its deadline → alert.
 
-### 6.5 Recharge fulfilment (M3)
-Same engine, different adapter: aggregator callbacks are verified, confirmed via the aggregator's
+### 6.5 Recharge and bill-payment fulfilment (M3)
+Same engine, different adapter: aggregator or BBPS responses are verified, confirmed via the
 status-check API, and run through the fulfilment state machine. A refund signal
-(`fulfilment.failed`) is emitted only for a **confirmed, final** failure. See PAYMENT-FLOWS §6.
+(`fulfilment.failed`) is emitted only for a **confirmed, final** failure. See PAYMENT-FLOWS §8.
+
+### 6.6 Dynamic QR payments (M2)
+A dynamic QR code is a **payment target** like an order. `qr_code.credited` webhooks are verified,
+confirmed against both the QR code and the payment, and run through the same engine. A single-use
+fixed-amount QR behaves exactly like an order (`order.paid` once, extra payments `order.overpaid`);
+a multi-use QR emits `qr.payment_received` once per payment. See PAYMENT-FLOWS §7.
 
 ## 7. What the merchant backend must do
 
@@ -147,13 +154,28 @@ status-check API, and run through the fulfilment state machine. A refund signal
 | Forged-request flood | Rejected at Ingress before storage | Storage and real payments unaffected |
 | Aegis fully down | **Payments still succeed** (Aegis is not in the money path); notifications wait for provider retries | Delay only |
 
-## 10. Security model
+## 10. Security model — zero trust for payment messages
 
-- **Fail-closed config:** a missing or weak secret prevents startup.
-- **Secret rotation without downtime:** two webhook secrets (current + previous) accepted during rotation.
-- **Least privilege:** Ingress holds only webhook secrets — no database, no provider API keys.
-  Verify/Processor hold API keys; Deliverer holds backend signing secrets.
-- **Verify API and Admin API are never public** (internal network / tailnet, token-authenticated).
+Zero trust means **no message, network location or component is trusted by default; every
+request is authenticated, verified against an authoritative source, and granted only the access it
+needs.** Aegis applies this to payment messages:
+
+| Zero-trust principle | How Aegis applies it |
+|---|---|
+| **Never trust, always verify** | A valid signature is not enough. Every claim is confirmed with the provider's API before anyone acts on it (D4). |
+| **Verify explicitly, every time** | Each webhook, `/verify` call and recheck is checked independently — no "already trusted" sources, sessions or IP allow-lists. |
+| **Don't expose what you protect** | The merchant backend is never reachable from the internet for callbacks; it accepts only requests signed by Aegis. |
+| **Separate enforcement from decision** | Ingress enforces (rejects bad signatures before storage); the Processor decides (confirm + state machine). |
+| **Least privilege** | Ingress holds only webhook secrets — no database, no API keys. Verify/Processor hold API keys; the Deliverer holds backend signing secrets. Admin and `/verify` are never public. |
+| **Assume breach** | If a webhook secret leaks, confirmation still blocks forgeries. If Ingress is compromised, it holds no database or API credentials. |
+| **Fail closed** | Missing or weak secrets stop startup; unconfirmable claims are held, never forwarded. |
+| **Continuous monitoring** | Every rejection is a metric and an alert; every order has a full audit timeline. |
+
+Operational controls:
+- **Secret rotation without downtime:** current + previous secrets accepted during rotation, for
+  provider webhooks and for Aegis's own signatures.
+- **Transport:** TLS on every hop; the Aegis → backend hop is authenticated by HMAC signature (mTLS
+  optional).
 - **Personal data:** raw bodies (may contain email, phone, UPI IDs) kept 90 days, masked in logs.
 
 ## 11. Latency, capacity and cost
@@ -184,12 +206,12 @@ No step changes data formats or component boundaries.
 
 | # | Deliverable | Done when |
 |---|---|---|
-| M0 | **Exploit Lab** — real vulnerable integrations in Docker + exploit scripts | Each exploit marks an order paid without Aegis |
+| M0 | **Exploit Lab** — reference merchant with switchable flaws, Razorpay-compatible mock gateway, exploit scripts ([EXPLOIT-LAB.md](EXPLOIT-LAB.md)) | Every exploit succeeds without Aegis |
 | M1 | **Razorpay core** — Ingress, Verify API, Processor (with re-checks), Deliverer, Admin, metrics | All M0 exploits blocked; G1–G5 tests green |
-| M2 | Stripe adapter; load, crash and chaos tests; published benchmarks | G6, G7 met and documented |
+| M2 | Dynamic QR payments; Stripe adapter; load, crash and chaos tests; published benchmarks | G6, G7 met and documented |
 | M3 | **Recharge / bill-payment fulfilment** — aggregator adapter (simulated aggregator) | Forged/premature `FAILED` never yields a refund signal |
 | M4 | Partner API protection — mTLS/HMAC partners, rate limits (adds Redis) | |
 | M5 | Risk engine — card-testing detection from payment metadata | |
 | M6 | AI analyst — explains failures, drafts rules, simulates them on history | |
 
-Details: [LLD.md](LLD.md) · Choices: [DECISIONS.md](DECISIONS.md)
+Details: [LLD.md](LLD.md) · Choices: [DECISIONS.md](DECISIONS.md) · Lab: [EXPLOIT-LAB.md](EXPLOIT-LAB.md)

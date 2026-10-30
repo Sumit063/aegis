@@ -107,6 +107,22 @@ notification; the backend deduplicates on it.
 ### D17 — Money, IDs and time
 Integer minor units + ISO currency (never floats); UUIDv7 IDs; `timestamptz` in UTC.
 
+### D18 — Orders generalised as payment targets
+The `orders` table carries `kind` (`ORDER`, `QR_CODE`) and `usage` (`SINGLE`, `MULTIPLE`) from
+the first migration. Dynamic QR payments (M2) and other targets are adapter work, not schema
+changes. Unsupported targets are recorded and alerted on, never silently dropped.
+
+### D19 — Zero trust for payment messages
+No message, network location or component is trusted by default: every claim is verified and
+confirmed, the backend is not exposed, each role has least privilege, and failure means "hold",
+never "forward". See HLD §10.
+
+### D20 — Exploit Lab uses a reference merchant and a mock gateway
+Real vulnerable plugin versions are not always still published, and a real sandbox cannot simulate
+a leaked secret or a contradicting provider state. A reference merchant with one switch per flaw,
+plus a Razorpay-compatible mock gateway, makes every exploit reproducible; real plugins are used
+additionally where available.
+
 ## Design review log
 
 Issues found while reviewing the design, before any code:
@@ -125,3 +141,8 @@ Issues found while reviewing the design, before any code:
 | R10 | Missing callbacks would leave transactions pending forever | Scheduled re-checks (D11) |
 | R11 | Confirm calls are bounded by provider API rate limits | Coalescing per order + per-provider concurrency cap |
 | R12 | Merchant-to-order mapping trusted claim data | `merchantOrderRef` taken from the provider API (`receipt`) |
+| R13 | Dynamic QR payments have no order and would be ignored | Payment targets (D18), QR support in M2 |
+| R14 | Refund claims were not checked against the captured amount | `refund_mismatch` check |
+| R15 | No backup or restore plan for PostgreSQL | Nightly dump, 14-day retention, monthly restore test |
+| R16 | Disputes/chargebacks undefined | Recorded and alerted, not interpreted; future adapter work |
+| R17 | Exploit Lab depended on vulnerable versions still being downloadable | Reference merchant + mock gateway (D20) |
