@@ -11,7 +11,7 @@ class AegisPropertiesTest {
     @Test
     void reportsWhichRolesThisProcessRuns() {
         AegisProperties properties =
-                new AegisProperties(DeploymentEnvironment.LOCAL, Set.of(Role.INGRESS, Role.PROCESSOR));
+                new AegisProperties(DeploymentEnvironment.LOCAL, Set.of(Role.INGRESS, Role.CHECKER));
 
         assertThat(properties.runs(Role.INGRESS)).isTrue();
         assertThat(properties.runs(Role.ADMIN)).isFalse();

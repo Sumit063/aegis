@@ -64,6 +64,25 @@ every leg.
 Adopting Aegis: point the provider base URL and the webhook/callback URLs at Aegis and move provider
 secrets into Aegis. Business code is unchanged.
 
+### 3.1 Who can run it
+
+Every hop in a payment chain has a receiver that acts on a message from the hop below. Aegis fits at
+any of them; only the adapter changes.
+
+```
+ Customer ─► Merchant app ─► Gateway (Razorpay) ─► Acquiring bank ─► NPCI ─► Customer's bank
+               ▲ Aegis           ▲ Aegis                ▲ Aegis
+         (gateway messages) (bank callbacks)     (NPCI RespPay/BBPS)
+```
+
+| Runs Aegis | Upstream it talks to | Validation | Inbound messages | Adapter |
+|---|---|---|---|---|
+| Merchant / app | Gateway | create order | callback, webhook | Razorpay, Stripe, Paytm-style |
+| Recharge / bill app (BBPS COU) | NPCI Bharat BillPay | bill fetch | async payment response | BBPS (XML, signed) |
+| Gateway (e.g. Razorpay) | acquiring bank | payment initiation | bank callback | bank-specific |
+| UPI PSP / bank | NPCI UPI | validate address | `RespPay` | UPI (XML, signed) |
+| Recharge platform | aggregator / operator | plan / amount check | recharge callback | aggregator-specific |
+
 ## 4. What Aegis checks
 
 **Inbound** (callback, webhook, async response, reply to an application request):

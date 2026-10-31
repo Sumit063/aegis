@@ -27,18 +27,20 @@ secrets. It never calls a provider unless the application asks.
 
 ## 2. Use cases
 
-**Any business whose server receives a "money moved" message and then hands over value.**
+**Any system that receives a "money moved" message and then hands over value**, at any hop of the
+payment chain.
 
-| Business | Hands over value when… | Risk without Aegis |
+| Who runs Aegis | Messages it protects | What goes wrong without it (real CVE classes) |
 |---|---|---|
-| E-commerce, food delivery | payment succeeds → ship / cook | Free orders from forged callbacks; double fulfilment |
-| Wallets, fintech apps | payment succeeds → credit balance | Balance credited twice; forged credits |
-| SaaS, ed-tech, subscriptions | payment succeeds → unlock plan | Plans unlocked without payment |
-| Recharge and bill-payment apps | payment succeeds → pay operator/biller; fulfilment fails → refund | Refund **and** recharge; stuck pending transactions |
-| Billing systems with dynamic QR (restaurants, fuel, retail POS) | QR credited → mark bill paid | Bills marked paid by forged or duplicate messages |
+| E-commerce, food delivery, SaaS, ed-tech | Gateway callbacks and webhooks | Forged "paid" callbacks give free orders (CVE-2026-94360, -103298, -87978); duplicates fulfil twice |
+| Wallets and fintech apps | Top-up webhooks | Balance credited twice by retries; forged credits via empty secrets (CVE-2026-41432) |
+| Recharge and bill-payment apps (BBPS COU) | Bill fetch, payment request, async responses | Double debit on retry; refund **and** delivery; status checks breaking NPCI limits |
+| Billing systems with dynamic QR | QR credit webhooks | Bills marked paid by forged or replayed messages |
+| Payment gateways (e.g. Razorpay's own side) | Acquiring-bank callbacks | Same classes, one hop upstream |
+| UPI PSPs and banks | NPCI `RespPay` and other async responses | Duplicate responses, replay, signature handling scattered across services |
 
-Not a use case: person-to-person UPI and printed shop QR codes — no merchant server receives a
-message, so there is nothing to guard.
+Not a use case: person-to-person UPI and printed shop QR codes with soundbox alerts. No server acts
+on a message, so there is nothing to guard.
 
 ## 3. Terms
 
