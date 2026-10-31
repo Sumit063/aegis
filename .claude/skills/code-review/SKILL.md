@@ -10,33 +10,36 @@ checklist. Report findings ranked by severity with file:line and a concrete fix.
 finding by reading the code; do not report guesses.
 
 ## 1. Payment safety (blockers)
-- [ ] State changes only after provider confirmation (strict mode); claims never set state directly.
+- [ ] Every inbound message runs the full check chain on every code path; no shortcut skips the
+      signature (CVE-2026-87978 class).
 - [ ] Nothing acknowledged before durable storage.
-- [ ] Idempotency is database-enforced (unique constraints / `ON CONFLICT`), not just `if` checks.
-- [ ] Order row locked for every change to it; events appended in the same transaction.
+- [ ] Duplicates and same-fact are database-enforced (unique keys / `ON CONFLICT`), not just `if` checks.
+- [ ] Checks on one validation run under its row lock (`FOR UPDATE`).
+- [ ] Aegis never calls a provider except for an application request.
 - [ ] No network call inside a `@Transactional` method (follow the call graph).
 - [ ] Retries are safe to repeat; crashes between steps cannot lose or double an effect.
 - [ ] Amounts are `long` minor units + currency; no floating point.
-- [ ] Fail-closed on missing config, unknown provider state, or verification error.
+- [ ] Fail-closed on missing or empty secrets, unknown provider status, or verification error.
 
 ## 2. Security
 - [ ] No secrets, tokens or personal data in logs, exceptions, metrics labels or tests.
 - [ ] Signatures compared in constant time (`MessageDigest.isEqual`).
 - [ ] Inputs bounded (body size, field lengths) and validated at the boundary.
-- [ ] Internal endpoints (verify, admin) not exposed publicly; authentication present.
+- [ ] Only `/in/**` is public; `/gw/**` and `/admin/**` require mTLS and app credentials.
+- [ ] Evidence (bodies) encrypted at rest; never logged.
 
 ## 3. Architecture and design
 - [ ] `ArchitectureTest` passes; no new cross-adapter or cross-provider dependency.
 - [ ] Domain stays framework-free.
-- [ ] SOLID: single-purpose classes, capability interfaces not fat ones, behaviour added by new
-      classes not core branches.
+- [ ] SOLID: single-purpose classes; behaviour added by new classes (adapter, `Check`), not core branches.
 - [ ] Patterns used as documented in ARCHITECTURE §5; no speculative abstractions.
-- [ ] JPA: `@Version` on mutable entities, explicit fetches, no lazy loading across layers,
-      `ddl-auto=validate`, migration included and backward compatible.
+- [ ] JPA: explicit fetches, no lazy loading across layers, `ddl-auto=validate`, migration
+      included and backward compatible.
 
 ## 4. Tests
 - [ ] New behaviour has tests at the right level; scenario tests reference LLD T-ids.
-- [ ] Edge cases: duplicates, out-of-order, concurrent routes, provider down, backend down.
+- [ ] Edge cases: duplicates, replays, out-of-order, callback + webhook concurrently, provider
+      down, application down.
 - [ ] No `Thread.sleep`; deterministic clocks (`ClockPort`).
 - [ ] `./mvnw verify` green.
 

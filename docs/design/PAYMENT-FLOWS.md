@@ -6,22 +6,24 @@ follow the same shape, and Stripe differs mainly in names (PaymentIntent instead
 
 ## 1. Where Aegis sits
 
-Aegis runs **inside the merchant's own infrastructure** — the business that sells something and
-receives the money — next to its backend.
+Aegis runs **inside the application's own infrastructure**, between the application and its payment
+providers. Every payment message passes through it in both directions.
 
 ```
- Customer's device         Gateway / NPCI / banks             MERCHANT'S INFRASTRUCTURE
- ─────────────────         ──────────────────────             ──────────────────────────────────
+ Customer's device         Gateway / NPCI / banks              APPLICATION'S INFRASTRUCTURE
+ ─────────────────         ──────────────────────              ─────────────────────────────────
                                                                ┌────────┐    ┌──────────────────┐
- UPI app / browser ──────► move the money ──webhooks─────────► │ AEGIS  │ ──►│ Merchant backend │
-        │                                                      │        │ ◄──│ (orders, wallet, │
-        └── checkout proof ──► merchant backend ──/verify─────►│        │    │  fulfilment)     │
-                                                               └────────┘    └──────────────────┘
+ UPI app / browser ──────► move the money ──webhooks─────────► │        │ ──►│ Application      │
+        │                           ▲                          │ AEGIS  │ ◄──│ (orders, wallet, │
+        └── checkout callback ──────┼────────────────────────► │        │    │  fulfilment)     │
+                                    └──── validations, payment ┤        │    └──────────────────┘
+                                          requests, status checks (app-initiated)
+                                                               └────────┘
 ```
 
 Aegis is **not** on the customer's phone, **not** inside the gateway, NPCI or any bank, and **not**
-in the path the money travels. Money moves exactly as it does without Aegis. Aegis guards the
-**messages that tell the merchant money moved**, and decides what the merchant may believe.
+in the path the money travels. It checks the **messages about money** and holds the provider
+secrets. It never calls a provider unless the application asks.
 
 ## 2. Use cases
 
@@ -46,8 +48,8 @@ message, so there is nothing to guard.
 | **Checkout** | The gateway's payment screen inside the merchant's app or site. |
 | **Payment** | One attempt to pay an order. An order can have several. |
 | **Authorize / Capture** | The bank approves and blocks the money / the merchant claims it (usually automatic). |
-| **Verify** | Check a signature — proves the gateway produced a message. |
-| **Confirm** | Ask the gateway's API directly — proves the payment is real, even if a secret leaked. |
+| **Validation** | The first step of every payment: the authority fixes the amount (create order, bill fetch, validate address). |
+| **Verify** | Check a signature — proves the provider produced a message. |
 | **Fulfil** | Hand over the value: ship, credit, recharge, unlock. **The step attackers target.** |
 | **Settle** | The gateway pays collected money into the merchant's bank, usually T+1/T+2. |
 | **Refund** | Money returned to the customer for a captured payment. |
@@ -65,14 +67,14 @@ message, so there is nothing to guard.
  Customer app         Merchant backend      Razorpay           NPCI / banks
       │                     │                   │                    │
  ① Pay ₹1,299 ─────────────►│                   │                    │
-      │                     │ ② create Order ──►│                    │
+      │                     │ ② create Order ──►│  (through AEGIS)   │
       │ ◄── order_id ───────│ ◄── order_id ─────│                    │
  ③ Checkout opens the UPI app (intent: pay Razorpay's VPA ₹1,299, ref)                   │
  ④ customer enters UPI PIN in their UPI app ──► PSP bank ──► NPCI ──► customer's bank debits
       │                     │                   │ ◄── ⑤ NPCI: credited to Razorpay's bank │
       │ ◄── ⑥ payment_id, order_id, signature ──│  (Checkout was polling Razorpay)        │
  ⑦ proof ──────────────────►│                   │                    │
-      │                     │ ⑧ /verify ──► AEGIS ──confirm──► Razorpay API     (Route A)
+      │                     │ ⑧ (callback lands at AEGIS, checked, forwarded)  (Route A)
       │ ◄── success page ───│ ⑨ fulfil          │                    │
       │                     │ ◄── AEGIS ◄── ⑩ webhooks: payment.captured, order.paid (Route B)
                               ⑪ T+1: Razorpay settles to the merchant's bank
@@ -80,7 +82,7 @@ message, so there is nothing to guard.
 
 - UPI is a **push** payment: the customer sends money from their own app. The merchant — and
   Aegis — never see the PIN or bank details.
-- Steps ①–⑥ and ⑪ are untouched by Aegis. Aegis acts in ⑧ and ⑩.
+- Aegis acts in ② (validation passes through it), ⑧ and ⑩. Steps ③–⑥ and ⑪ are untouched.
 - Card and netbanking payments follow the same shape; only step ④ differs (card network or bank
   page instead of NPCI).
 
@@ -93,23 +95,23 @@ message, so there is nothing to guard.
 | Reliability | **Fragile** — app closed, network lost, phone died | Reliable — retried for hours |
 | Covers | Only the success moment | Success, failures, refunds, late authorisations |
 | Proof | `HMAC_SHA256(order_id + "\|" + payment_id, key_secret)` | `HMAC_SHA256(raw_body, webhook_secret)` |
-| In Aegis | Verify API | Ingress → Kafka → Processor |
+| In Aegis | `/in/{connection}/callback` | `/in/{connection}` → Kafka → Checker |
 
-Both routes end in **one state machine**. Whichever reports the payment first moves the order to
-`PAID` and creates **one `order.paid` with one ID**; the other route becomes a no-op.
+Both routes go through the same checks. Whichever reports the payment first is forwarded; the other
+is recorded as the **same fact** and not forwarded again.
 
 ## 6. What goes wrong at each step
 
 | Step | Common bug | Effect | Aegis protection |
 |---|---|---|---|
-| ② Order | Amount taken from the client | ₹1 paid for a ₹1,299 order | Out of scope (merchant logic) |
-| ⑦–⑧ | Signature not checked, or `status=success` trusted | Free orders | Verify API: signature + confirm |
-| ⑦–⑧ | `order_id` taken from the client | Pay for a cheap order, claim an expensive one | Merchant's stored `order_id` required |
-| ⑩ | Webhook signature not checked / empty secret | Anyone can mark orders paid | Signature check + confirm |
-| ⑩ | Duplicate or replayed webhook | Wallet credited twice | Dedupe + state machine |
-| ⑩ | `payment.failed` for attempt 1 arrives after attempt 2 succeeded | **Paid order cancelled** | Order-level state |
-| ⑥–⑩ | Two attempts both captured on one order | Customer charged twice | `order.overpaid` |
-| ⑨ | Both routes fulfil | Order fulfilled twice | One `order.paid` ID, database-enforced |
+| ② Order | Amount taken from the client | ₹1 paid for a ₹1,299 order | Out of scope (application logic); the validated amount is recorded |
+| ⑦–⑧ | Signature not checked, or `status=success` trusted | Free orders | Signature on every callback |
+| ⑦–⑧ | `order_id` taken from the client | Pay for a cheap order, claim an expensive one | Callback must match a recorded validation |
+| ⑩ | Webhook signature not checked / empty secret | Anyone can mark orders paid | Signature check, fail closed |
+| ⑩ | Duplicate or replayed webhook | Wallet credited twice | Message-ID uniqueness + freshness |
+| ⑩ | `payment.failed` for attempt 1 arrives after attempt 2 succeeded | **Paid order cancelled** | Blocked as `DOWNGRADE` |
+| ⑩ | Amount in the message differs from the order | Underpayment accepted | Blocked as `AMOUNT_MISMATCH` |
+| ⑨ | Both routes fulfil | Order fulfilled twice | Same fact forwarded once |
 
 ## 7. UPI scan-and-pay
 
@@ -122,12 +124,11 @@ Both routes end in **one state machine**. Whichever reports the payment first mo
 ```
  POS / website ─► gateway: create QR for bill #88 (₹640, single use)
  Customer scans with UPI app ─► NPCI ─► gateway credited
- Gateway ──qr_code.credited──► AEGIS ──confirm (QR + payment)──► POS backend: bill #88 paid
+ Gateway ──qr_code.credited──► AEGIS (signature, match QR, amount) ──► POS backend: bill #88 paid
 ```
 
-A dynamic QR is treated as a **payment target**, like an order: a single-use fixed-amount QR is
-paid once (extra payments → `overpaid`); a multi-use QR produces one notification per received
-payment.
+Creating a dynamic QR is a **validation**, like creating an order; each credit is a payment message
+checked against it.
 
 ## 8. Recharges and bill payments
 
@@ -154,10 +155,10 @@ merchant must pay the operator or biller.
               ④ success → receipt · failure → refund · pending → transaction status check
 ```
 
-Aegis sits at the **COU**, handling ③–④. BBPS connections are private and messages are signed, so
-forgery is much harder than with public webhooks; the value of Aegis there is **correctness**:
-duplicate responses, pending transactions that never resolve, refund-then-success, and double
-processing on retries.
+Aegis sits at the **COU**: bill fetch and payment requests go out through it, responses come back
+through it. BBPS messages are signed with private keys, so forgery is hard; the value of Aegis there
+is signature handling in one place, duplicate responses, double payment requests on retries, and
+status checks kept within NPCI's limits.
 
 ### 8.3 How it differs from a checkout
 
@@ -171,12 +172,10 @@ processing on retries.
 | Late surprise | Late authorisation | Success *after* the refund went out |
 | Callback security | Gateways sign webhooks | Private aggregators vary; BBPS is signed and private |
 
-### 8.4 What Aegis does for fulfilment (M3)
+### 8.4 What Aegis does here
 
-- The **payment side is identical** to checkout.
-- The **fulfilment side** runs the same engine with an aggregator/BBPS adapter: verify the
-  callback, **confirm with the status-check API**, apply the fulfilment state machine, notify once.
-- A refund signal (`fulfilment.failed`) only for a **confirmed, final** failure.
-- `PENDING` transactions are re-checked on a schedule, even with no callback.
-- Success after a refund raises `fulfilment.late_success` so the amount can be recovered.
-- Aegis never refunds or recharges itself; it tells the merchant when it is safe to.
+- The **payment-in side** is identical to checkout.
+- The **value-out side** is another provider connection (aggregator or BBPS): the request goes out
+  through Aegis and the callback comes back through it, with the same checks.
+- Aegis never refunds, recharges or retries on its own; the application decides, and status checks
+  happen only when the application asks.

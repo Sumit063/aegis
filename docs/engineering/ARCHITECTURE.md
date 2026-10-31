@@ -8,157 +8,133 @@ The system design (what Aegis does) lives in [`docs/design`](../design); this do
 
 ```
                  ┌──────────────────────── adapter.in ────────────────────────┐
-                 │  web (Ingress, Verify, Admin) · kafka (ClaimConsumer) ·     │
-                 │  scheduler (Confirm, Recheck, Delivery workers)             │
+                 │  web (Ingress, Callback, Gateway API, Admin) ·              │
+                 │  kafka (Checker consumer) · scheduler (Forwarder)           │
                  └──────────────────────────────┬──────────────────────────────┘
                                                 │ calls use cases (ports in)
                  ┌──────────────────────────────▼──────────────────────────────┐
-                 │  application  — use cases, transaction boundaries, policies  │
+                 │  application  — use cases, transaction boundaries            │
                  │     port.in  (what the outside may ask)                      │
                  │     port.out (what the core needs from the outside)          │
                  └──────────────────────────────┬──────────────────────────────┘
                                                 │ uses
                  ┌──────────────────────────────▼──────────────────────────────┐
-                 │  domain  — pure Java: targets, transactions, claims,         │
-                 │  state machines, rules, value objects, domain events         │
+                 │  domain  — pure Java: messages, validations, checks,         │
+                 │  verdicts, value objects                                     │
                  └──────────────────────────────────────────────────────────────┘
                  ┌──────────────────────── adapter.out ───────────────────────┐
-                 │  persistence (JPA) · kafka (ClaimLog) · http (Delivery)     │
+                 │  persistence (JPA) · kafka (ingress log) · http (provider,  │
+                 │  forwarding) · crypto (at-rest encryption, JWE)             │
                  └──────────────────────────────────────────────────────────────┘
                  ┌──────────────────────── provider ──────────────────────────┐
-                 │  spi (capability interfaces, registry) ·                    │
-                 │  razorpay · stripe · bbps · recharge · mastercard · …       │
+                 │  spi (ProviderAdapter, registry, contract) ·                │
+                 │  razorpay · stripe · paytm · bbps · upi · …                 │
                  └──────────────────────────────────────────────────────────────┘
 ```
 
-**Why:** the payment rules (the valuable, risky part) must not depend on Kafka, PostgreSQL, Spring
-MVC or any provider. Each of those can change — or gain a second implementation — without touching
-the core.
+**Why:** the checks (the valuable, risky part) must not depend on Kafka, PostgreSQL, Spring MVC or
+any provider. Each of those can change without touching the core.
 
 ## 2. Packages
 
 ```
 aegis-service/src/main/java/dev/aegis/
   domain/                 pure Java, no framework imports
-    shared/               value objects: Money, SourceId, ProviderRef, ids
-    target/               PaymentTarget aggregate (orders, QR codes)
-    transaction/          Transaction aggregate, TxnKind, state machines
-    claim/                Claim, ClaimOrigin, ClaimStatus, ClaimRule chain
-    notification/         Notification, NotificationPolicy
-    event/                domain events
+    shared/               value objects: Money, ProviderId, references
+    message/              PaymentMessage, MessageType, Outcome, Verdict, BlockReason
+    validation/           Validation
+    check/                Check chain: Freshness, Duplicate, Match, Amount, Downgrade, SameFact, InFlight, EnquiryLimit
   application/
-    port/in/              use-case interfaces (ReceiveWebhookUseCase, VerifyCheckoutUseCase, …)
-    port/out/             ClaimLogPort, InboxRepository, OrderRepository, OutboxRepository, EventLogPort, RuntimeConfigPort, ClockPort, …
+    port/in/              ReceiveMessageUseCase, HandleCallbackUseCase, SendOutboundUseCase, ForwardUseCase, AdminQueries
+    port/out/             IngressLogPort, ValidationRepository, PaymentRepository, ProviderClientPort,
+                          ForwardClientPort, EvidenceCipherPort, RuntimeConfigPort, ClockPort
     service/              use-case implementations (transaction boundaries live here)
   provider/
-    spi/                  capability interfaces, ProviderModule, ProviderRegistry, SignatureScheme
+    spi/                  ProviderAdapter, ProviderRegistry, RawMessage, ParsedMessage, EnquiryLimits
     razorpay/             M1
-    stripe/ bbps/ recharge/ mastercard/   later, one package each
+    stripe/ paytm/ bbps/ upi/   later, one package each
   adapter/
-    in/web/               controllers, request/response DTOs
-    in/kafka/             ClaimConsumer
-    in/scheduler/         lease-based workers
-    out/persistence/      JPA entities, Spring Data repositories, mappers, port implementations
-    out/kafka/            ClaimLog publisher
-    out/http/             outbound delivery client
-  config/                 typed properties, role toggles, fail-closed validation, bean wiring
+    in/web/               controllers, DTOs
+    in/kafka/             Checker consumer
+    in/scheduler/         Forwarder
+    out/persistence/      JPA entities, repositories, port implementations
+    out/kafka/            ingress log publisher
+    out/http/             provider client (mTLS), forward client
+    out/crypto/           AES-GCM evidence cipher, JWE, Aegis signing
+  config/                 typed properties, connections, applications, fail-closed validation
 ```
 
 ## 3. Dependency rules (enforced by ArchUnit on every build)
 
 | Rule | Why |
 |---|---|
-| `domain` depends only on `java.*` | Payment rules stay framework-free and trivially unit-testable |
+| `domain` depends only on `java.*` | Checks stay framework-free and trivially unit-testable |
 | `application` depends on `domain` and `provider.spi` only (plus `spring-tx` annotations) | Use cases never know about HTTP, Kafka or JPA |
 | `adapter.*` may depend on `application` and `domain`, never on each other | Swappable adapters |
 | `provider.<x>` depends on `provider.spi` and `domain` only; never on another provider | Providers are plugins |
-| JPA (`jakarta.persistence`) only in `adapter.out.persistence` | Persistence model stays separate from the domain model |
-| No package cycles | Keeps the graph understandable as it grows |
+| JPA (`jakarta.persistence`) only in `adapter.out.persistence` | Persistence model stays separate |
+| No package cycles | Keeps the graph understandable |
 | Controllers end in `Controller`, ports in `Port`/`UseCase`, adapters in `Adapter` | Predictable navigation |
 
 ## 4. SOLID, applied
 
 | Principle | How it shows up |
 |---|---|
-| **S**ingle responsibility | Ingress only authenticates and logs claims; the Processor only confirms and transitions; the Deliverer only delivers. One use case per class. |
-| **O**pen/closed | New provider = new `provider.<x>` package implementing SPI capabilities; new claim check = new `ClaimRule`; new notification = new policy entry. Core code is not edited. |
-| **L**iskov substitution | Every `ProviderModule` honours the same contracts, verified by a shared **contract test suite** each provider must pass. |
-| **I**nterface segregation | Providers implement only the capabilities they have (`WebhookAuthenticator`, `CheckoutProofVerifier`, `TruthSource`, `StatusEnquiry`, …), not one fat interface. |
-| **D**ependency inversion | The core defines ports; adapters implement them. The core never imports an adapter. |
+| **S**ingle responsibility | Ingress verifies and buffers; the Checker decides verdicts; the Forwarder delivers; the Gateway API proxies. One check per class. |
+| **O**pen/closed | New provider = new `provider.<x>` package; new check = new `Check` in the chain. Core code is not edited. |
+| **L**iskov substitution | Every `ProviderAdapter` passes the same shared contract test suite. |
+| **I**nterface segregation | Adapters for providers without outbound requests or encryption use the SPI's no-op defaults instead of fake implementations. |
+| **D**ependency inversion | The core defines ports; adapters implement them. |
 
 ## 5. Design patterns
 
 | Pattern | Where | Why |
 |---|---|---|
-| **Hexagonal / Ports & Adapters** | Whole service | Isolate payment rules from infrastructure |
-| **Adapter + Anti-corruption layer** | `provider.<x>` | Translate each provider's payloads, statuses and errors into domain terms; nothing provider-specific leaks inward |
-| **Plugin + Registry** | `ProviderRegistry` (Spring collects all `ProviderModule` beans) | Add providers without touching the core |
-| **Capability interfaces (ISP)** | `provider.spi` | A BBPS module has no checkout verifier; a gateway has no status enquiry — each implements what it supports |
-| **Strategy** | `SignatureScheme` (HMAC-hex, HMAC-base64+timestamp, RSA/XML-DSig, OAuth 1.0a body hash), `BackoffPolicy`, `ForwardingMode` (envelope/passthrough), `VerificationMode` (strict/verify-only) | Swap algorithms per provider/destination by configuration |
-| **Table-driven state machine** | `TransitionTable` per `TxnKind`, `PaymentTarget` rules | Allowed moves are data, reviewable at a glance, exhaustively testable |
-| **Chain of Responsibility** | `ClaimRule` chain in confirmation (exists → target match → amount match → not contradicted → not behind) | Each check isolated; new checks slot in |
-| **Aggregate + Repository (DDD)** | `PaymentTarget` owns its `Transaction`s and is stored as one row; repositories are ports | One consistency boundary, one lock |
-| **Value Object** | `Money`, `SourceId`, `ProviderRef` as Java records | Validation at construction; no primitive obsession |
-| **Domain events + Observer** | Transitions raise events; `NotificationPolicy` maps events → notifications | State logic doesn't know who is told |
-| **Transactional Outbox** | Outbox rows (and events) written in the same DB transaction as the state change; Deliverer relays | No lost or phantom notifications |
-| **Idempotent Consumer** | Inbox unique key; deterministic outbox IDs (`UUIDv5`) | At-least-once input, once-only effects |
-| **Competing Consumers + Lease** | Workers claim rows with `SKIP LOCKED` + `locked_until` | Horizontal scaling without coordination; crash recovery |
-| **Retry with backoff + jitter, Circuit Breaker, Bulkhead** | Provider calls and deliveries (Resilience4j) | Survive slow or failing dependencies without overload |
-| **Decorator** | Metrics/tracing around ports (Micrometer observations) | Cross-cutting concerns outside business code |
-| **Builder** | Notification envelopes, test fixtures | Readable construction of large immutable objects |
-| **CQRS-lite** | Admin timelines use read-only query projections | Investigation queries never touch the write model |
+| **Hexagonal / Ports & Adapters** | Whole service | Isolate checks from infrastructure |
+| **Adapter + Anti-corruption layer** | `provider.<x>` | Each provider's formats, signatures and statuses become provider-neutral `ParsedMessage`/`Outcome` |
+| **Plugin + Registry** | `ProviderRegistry` | Add providers without touching the core |
+| **Strategy** | Signature schemes (HMAC, checksum, XML-DSig), ack formats, backoff | Swap per provider by configuration |
+| **Chain of Responsibility** | `Check` chain (freshness → duplicate → match → amount → downgrade → same fact) | Each check isolated and tested alone; first failure gives the block reason |
+| **Value Object** | `Money`, `ProviderId`, references as records | Validation at construction |
+| **Idempotent Consumer** | Unique keys on message ID and same fact | At-least-once input, once-only forwarding |
+| **Competing Consumers** | Kafka partitions; Forwarder claims rows with `FOR UPDATE SKIP LOCKED` | Scale by adding instances |
+| **Retry with backoff + jitter, Circuit Breaker** | Forwarding to the application | Survive a slow or failing application |
+| **Decorator** | Metrics/tracing around ports | Cross-cutting concerns outside business code |
 
-Deliberately **not** used: deep inheritance / Template Method (composition instead), service
-locators, Lombok (records cover it), reactive stacks (virtual threads instead).
+Deliberately **not** used: business state machines, outbox/event sourcing, reactive stacks,
+Lombok, deep inheritance.
 
-## 6. Provider plugin model
+## 6. Provider adapters
 
-```java
-// provider.spi — each provider module exposes only the capabilities it has
-interface ProviderModule { ProviderId id(); Set<Capability> capabilities(); }
+The `ProviderAdapter` interface is in LLD §6. Adding a provider:
 
-interface WebhookAuthenticator { boolean authenticate(RawRequest request, SecretSet secrets); }
-interface WebhookParser       { ParsedClaim parse(RawRequest request); }
-interface CheckoutProofVerifier { boolean verify(CheckoutProof proof, SourceCredentials credentials); }
-interface TruthSource         { ProviderTransaction fetchTransaction(TxnRef ref); ProviderTarget fetchTarget(TargetRef ref); }
-interface StatusEnquiry       { FulfilmentStatus enquire(TxnRef ref); }   // BBPS, recharge aggregators
-```
+1. Create `provider/<name>/` and implement `ProviderAdapter` (unused parts keep the SPI defaults).
+2. Map statuses strictly: only the provider's final-success status becomes `SUCCESS`.
+3. Register the bean; add a connection in configuration.
+4. Pass the shared contract test suite (signature accept/reject, empty-secret rejection, parsing,
+   acknowledgement format, freshness, enquiry limits).
 
-| Provider type | Example | WebhookAuthenticator | WebhookParser | CheckoutProofVerifier | TruthSource | StatusEnquiry | Signature scheme |
-|---|---|---|---|---|---|---|---|
-| Payment gateway | Razorpay (M1) | ✓ | ✓ | ✓ | ✓ | — | HMAC-SHA256 hex |
-| Payment gateway | Stripe (M2) | ✓ | ✓ | — | ✓ | — | HMAC-SHA256 with timestamp |
-| Dynamic QR | Razorpay QR (M2) | ✓ | ✓ | — | ✓ | — | HMAC-SHA256 hex |
-| Bill payments | BBPS COU integration (M3) | ✓ | ✓ | — | — | ✓ | Digital signature (RSA / XML-DSig) |
-| Recharge aggregator | Any aggregator (M3) | ✓ | ✓ | — | — | ✓ | Varies: HMAC, token, mTLS |
-| Card network APIs | Mastercard (future) | ✓ | ✓ | — | ✓ | ✓ | OAuth 1.0a signed requests, mTLS |
-
-Adding a provider: create `provider/<name>/`, implement the capabilities it has, register a
-`ProviderModule` bean, pass the shared contract test suite. See the `add-provider` skill.
+See the `add-provider` skill.
 
 ## 7. Persistence (JPA)
 
-- **Spring Data JPA** repositories implement the persistence ports. JPA entities live only in
-  `adapter.out.persistence` and are mapped to and from domain objects.
-- **Schema is owned by Flyway**; Hibernate runs with `ddl-auto=validate`.
-- **Optimistic locking** (`@Version`) on every mutable entity; a **pessimistic lock**
-  (`@Lock(PESSIMISTIC_WRITE)`) on the order row for every transition. Transactions are a JSON
-  array inside the order entity (`@JdbcTypeCode(SqlTypes.JSON)`), mapped to domain records.
-- **Events** are appended through `EventLogPort` in the same transaction as each change.
-- **Queue claiming** (`FOR UPDATE SKIP LOCKED`) and **insert-if-absent** (`ON CONFLICT DO NOTHING`)
-  use explicit native queries — the two places JPA abstractions would hide essential behaviour.
-- `open-in-view=false`; no lazy loading across layers; fetch what a use case needs explicitly.
-- **Never call the network inside a database transaction.**
+- Spring Data JPA repositories implement the persistence ports; entities live only in
+  `adapter.out.persistence`.
+- Flyway owns the schema; Hibernate runs with `ddl-auto=validate`.
+- Native SQL for the two places where JPA would hide essential behaviour: `INSERT … ON CONFLICT`
+  (duplicates) and `SELECT … FOR UPDATE` / `SKIP LOCKED` (validation lock, forwarding queue).
+- Evidence columns are encrypted/decrypted through `EvidenceCipherPort`, never stored in clear.
+- `open-in-view=false`. **Never call the network inside a database transaction.**
 
 ## 8. Testing pyramid
 
 | Level | Scope | Tools | Naming |
 |---|---|---|---|
-| Unit | domain, application services (ports faked) | JUnit 5, AssertJ | `*Test` |
+| Unit | domain checks, application services (ports faked) | JUnit 5, AssertJ | `*Test` |
 | Architecture | dependency rules above | ArchUnit | `ArchitectureTest` |
 | Contract | every provider against the SPI contract | JUnit 5 abstract suite | `*ContractTest` |
 | Integration | adapters with real infrastructure | Testcontainers (PostgreSQL, Kafka), WireMock | `*IT` |
-| Scenario | T1–T23 from the LLD test catalogue | Testcontainers + WireMock | `*ScenarioIT` |
+| Scenario | T1–T19 from the LLD test catalogue | Testcontainers + WireMock | `*ScenarioIT` |
 
-Unit tests run in `test`; integration and scenario tests run in `verify` (Failsafe).
-Coverage gate: JaCoCo, 80 % lines for `domain` and `application`.
+Unit tests run in `test`; integration and scenario tests in `verify`. Coverage gate: JaCoCo, 80 %
+lines for `domain` and `application`.

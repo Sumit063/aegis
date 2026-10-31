@@ -1,61 +1,62 @@
 # Aegis
 
-**A self-hosted service that decides what a merchant may believe about money.**
+**A zero-trust security gateway for payment messages.**
 
-Aegis sits between payment providers and the merchant backend. It verifies every payment claim,
-confirms it with the provider, merges the checkout route and the webhook route into one state
-machine, and tells the backend to fulfil **once per order** — with minimal changes to existing code.
+Aegis sits between an application and its payment providers (gateways, NPCI UPI/BBPS, aggregators).
+Every payment message passes through it in both directions. Aegis verifies each one: signature,
+freshness, duplicates, match with what the provider validated, and no downgrade of a success. It
+records the message and forwards the original, with its verdict, or blocks it. It holds the provider
+secrets, and it never calls a provider unless the application asks.
 
 ```
- Razorpay ──webhooks──► Aegis ──signed notifications──► Merchant backend ──► fulfil once
- Merchant backend ──/verify (checkout proof)──► Aegis
+ Application ──validation · payment request · status check──► AEGIS ──signed──► Provider
+ Application ◄──original message + verdict (mTLS, signed)───── AEGIS ◄──callbacks · webhooks── Provider
 ```
 
 ## Why
 
-Fulfilment (shipping, wallet credit, recharge) happens when a merchant believes a payment
-succeeded, and that belief is often wrong: forged or unverified callbacks, payments not bound to
-orders, replays and duplicates, a failed attempt cancelling a paid order, or the same order
-fulfilled by both the checkout and the webhook route. In 2026 alone, several public CVEs let
-attackers mark unpaid orders as paid — CVE-2026-11575, CVE-2026-9832, CVE-2026-87978,
-CVE-2026-16738, CVE-2026-33661.
+Applications hand over value when a message says money moved, and those messages are often trusted
+without proper checks. In 2026 alone, public CVEs let attackers mark unpaid orders as paid through
+missing, partial or broken signature checks: CVE-2026-94360, CVE-2026-103298, CVE-2026-87978,
+CVE-2026-11575, CVE-2026-41432, CVE-2026-33661 and more. Duplicates, replays, out-of-order failures
+and double payment requests cause the rest. Aegis does these checks once, the same way, for every
+provider.
 
 ## What it guarantees
 
-- Nothing is reported as paid unless the provider confirms it, for that order and amount.
-- No accepted event is lost.
-- One `order.paid` per order, whichever route reports first.
-- No impossible state change; a failed attempt never undoes a paid order.
-- Every order has a full, queryable timeline.
+- Nothing reaches the application without passing every check.
+- Nothing is acknowledged to a provider before it is stored.
+- A fact (payment X succeeded) is forwarded once, whichever channel reports it first.
+- No passed message is lost before the application acknowledges it.
+- Aegis never initiates a call to a provider.
 
 ## Architecture
 
 ```
-Webhook ─► Ingress ─► Kafka ─► Processor ◄─confirm─► Provider API
-                                  │
-Backend ─► Verify API ── same engine ──► PostgreSQL ─► Deliverer ─► Backend
+ Provider ──► Ingress ──► Kafka ──► Checker ──► PostgreSQL ──► Forwarder ──► Application
+ Application ──► Gateway API ──► Provider
 ```
 
 | | |
 |---|---|
 | Language | Java 25, Spring Boot 4 (virtual threads) |
-| Event log | Apache Kafka (KRaft) |
-| State & scheduled work | PostgreSQL |
+| Ingress buffer | Apache Kafka (KRaft) |
+| Records | PostgreSQL: `validations`, `payments` |
 | Observability | Micrometer · Prometheus · Grafana |
 | Deployment | Docker Compose |
 
 ## Design
 
-- [Payment flows](docs/design/PAYMENT-FLOWS.md) — where Aegis sits, use cases, checkout, UPI, QR, recharges and bill payments
-- [High-level design](docs/design/HLD.md) — goals, architecture, flows, zero-trust security model, failures, scaling
-- [Low-level design](docs/design/LLD.md) — state machines, APIs, schema, config, test catalogue
-- [Decisions](docs/design/DECISIONS.md) — every choice, why, and the design review log
+- [Payment flows](docs/design/PAYMENT-FLOWS.md) — checkout, UPI, QR, recharges and bill payments, and where Aegis sits
+- [High-level design](docs/design/HLD.md) — role, problems, checks, zero trust, guarantees, failures
+- [Low-level design](docs/design/LLD.md) — endpoints, pipelines, adapter interface, schema, forwarding, tests
+- [Decisions](docs/design/DECISIONS.md) — every choice and why
 - [Exploit Lab](docs/design/EXPLOIT-LAB.md) — reproducible attacks that prove the protection
 
 ## Engineering
 
-- [Code architecture](docs/engineering/ARCHITECTURE.md) — hexagonal layout, dependency rules, design patterns, provider plugins
-- [CI/CD, environments and branching](docs/engineering/CICD.md) — local/dev/staging/prod, branch flow, pipelines, quality gates
+- [Code architecture](docs/engineering/ARCHITECTURE.md) — hexagonal layout, dependency rules, patterns, provider adapters
+- [CI/CD, environments and branching](docs/engineering/CICD.md)
 - [Features](docs/features/README.md) — backlog and the feature-by-feature workflow
 - [AGENTS.md](AGENTS.md) — rules and workflow for AI coding agents and contributors
 
@@ -74,12 +75,10 @@ docker compose -f deploy/compose.yaml -f deploy/compose.local.yaml up -d postgre
 
 | # | Milestone | Status |
 |---|---|---|
-| M0 | Exploit Lab — reproduce real callback CVEs in Docker | design done |
-| M1 | Razorpay core — webhooks, Verify API, re-checks, delivery, admin | design done |
-| M2 | Dynamic QR payments, Stripe adapter, load and chaos tests, benchmarks | planned |
-| M3 | Recharge / bill-payment fulfilment callbacks | planned |
-| M4 | Partner API protection (mTLS/HMAC, rate limits) | planned |
-| M5 | Card-testing / risk detection | planned |
-| M6 | AI analyst with rule simulation | planned |
+| M0 | Exploit Lab — reproduce the CVE classes in Docker | design done |
+| M1 | Core gateway with Razorpay | design done |
+| M2 | Stripe and Paytm-style adapters; load and failure tests | planned |
+| M3 | NPCI-style XML adapters (BBPS, UPI) against a simulator | planned |
+| M4 | Partner API protection and rate limits | planned |
 
 Aegis never handles raw card data and never moves money.

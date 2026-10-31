@@ -1,217 +1,171 @@
 # Aegis — High-Level Design
 
-Read [PAYMENT-FLOWS.md](PAYMENT-FLOWS.md) first: where Aegis sits, its use cases, the payment
-flows (checkout, UPI, QR, recharges, bill payments) and the terms used here.
+Read [PAYMENT-FLOWS.md](PAYMENT-FLOWS.md) for how checkout, UPI and bill payments work and the terms
+used here.
 
-## 1. Problem
+## 1. Role
 
-A merchant fulfils an order (ships goods, credits a wallet, performs a recharge) when it believes a
-payment succeeded. That belief arrives through two routes — the customer's device (checkout
-handler) and the gateway's webhooks — and both are commonly mishandled: missing or empty secrets,
-unverified code paths, payments not bound to orders, replays, duplicates, a failed attempt
-cancelling a paid order, and the same order fulfilled by both routes.
-(2026 examples: CVE-2026-11575, CVE-2026-9832, CVE-2026-87978, CVE-2026-16738, CVE-2026-33661.)
+**Aegis is a zero-trust security gateway for payment messages.** It sits between an application
+(merchant backend, recharge or bill-payment app, BBPS customer unit) and its payment providers
+(gateways, NPCI UPI/BBPS, aggregators). Every payment message, in either direction, passes through
+Aegis, which checks that it is authentic, fresh, unique and consistent with what the provider
+validated, records it, and passes or blocks it.
 
-**Aegis is a self-hosted service that decides what the merchant may believe about money.** It
-verifies and confirms every claim with the provider, merges both routes into one state machine,
-and tells the merchant to fulfil **once per order**.
+Aegis **does not** manage orders, run business workflows, fulfil, refund or move money.
+Aegis **never calls a provider on its own**: it forwards only what the application asks for and
+checks what the provider sends back.
 
-## 2. Goals
+## 2. The problem
 
-| # | Goal | Measured by |
+Applications hand over value (ship goods, credit a wallet, pay a bill) when a message says money
+moved. Those messages are routinely trusted without proper checks. Public CVEs from 2026 alone:
+
+| Flaw | Examples | Effect |
 |---|---|---|
-| G1 | **No forged or unconfirmed claim is ever reported as success** | Exploit Lab: every reproduced CVE blocked |
-| G2 | **No accepted event is ever lost** | Crash tests: events acknowledged == events stored |
-| G3 | **One fulfilment signal per order**, whichever route reports first | Race tests: Route A + Route B + duplicates → one `order.paid` ID |
-| G4 | **No illegal state change**; a failed attempt never undoes a paid order | State-machine tests |
-| G5 | **Every order is traceable** in one query | Admin API timeline |
-| G6 | **Fast where someone waits** | Webhook ack p99 < 50 ms · Verify API p99 < 500 ms · webhook end-to-end p99 < 2 s |
-| G7 | **Scales by adding processes, not by redesign** | 500 events/s sustained, 2,000/s burst on one server |
+| Signature never checked | CVE-2026-94360, CVE-2026-103298, CVE-2026-94361, CVE-2026-5050, CVE-2026-16621, CVE-2026-21894 | Anyone marks any order paid |
+| Signature checked on some paths only | CVE-2026-87978 (one handler branch skips it) | Same |
+| Broken signature logic | CVE-2026-11575 (unkeyed hash), CVE-2026-41432 (empty secret accepted), CVE-2026-33731 (rejected only if signature **and** lookup fail) | Same |
+| Trusted "known" host | CVE-2026-33661 (`Host: localhost` skipped checks) | Same |
+| Wrong status trusted | CVE-2026-41432 (`complete` treated as `paid`) | Unpaid orders fulfilled |
+| No de-duplication or replay protection | Providers deliver at least once (Razorpay retries for 24 h) | Wallet credited N times |
+| Out-of-order messages | Late `failed` after `captured` | Paid order cancelled |
+| Result not matched to what was validated | Amount or order swapped | ₹10 pays for ₹10,000 |
+| Double payment request on retry | App or user retries a UPI/BBPS payment | Customer debited twice |
+| Provider secrets in every service | Keys spread over repos and configs | One leak forges everything |
 
-## 3. Non-goals
+Every application re-implements these checks and many get one wrong. Aegis does them once, the same
+way, for every provider.
 
-- **Never moves money.** Aegis does not create orders, capture, refund, recharge or settle; the
-  merchant does. Aegis decides what the merchant should believe and when to act.
-- **Never handles raw card data** — stays out of PCI-DSS scope.
-- Not a payment orchestrator, not a WAF / DDoS shield (runs behind one if needed).
-- Does not fix the merchant's own order logic (e.g. amount taken from the client at order creation).
-- No multi-tenant SaaS and no web UI in v1 (admin API + Grafana).
-
-## 4. Core idea: claim → confirm → transition → notify once
-
-Every input is a **claim** ("payment pay_X captured", "recharge R failed"). Aegis handles every
-claim the same way, whatever its route or provider:
-
-1. **Verify** the claim's signature (proves who sent it).
-2. **Confirm** with the provider's API (proves it is true, for this order and amount).
-3. **Transition** the order/transaction through a state machine (rejects impossible moves).
-4. **Notify once** — emit one event per real state change, with a stable ID.
-
-Payments, refunds and (from M3) recharge fulfilments are all **transactions** with their own state
-machine, so new flows plug in as adapters without changing the core.
-
-## 5. Architecture
+## 3. Where Aegis sits
 
 ```
- Razorpay ──webhook──► Ingress ──► Kafka ──► Processor ◄──confirm──► Razorpay API
-                     (public)              dedupe · confirm ·            ▲
-                     verify, ack           transition                    │ confirm
-                                               │                         │
- Merchant ──POST /verify (Route A)──► Verify API ──── same engine ───────┘
- backend ◄── verdict + order.paid ID ─┘    │
-    ▲                                      ▼
-    │                                  PostgreSQL ◄──── Admin API (tailnet only)
-    │                         inbox · orders · outbox · events
-    │                                      │
-    └────── signed POST, retries ───── Deliverer
+                ┌──────────────────────────── AEGIS ─────────────────────────────┐
+ Application ──►│ OUT  validation · payment request · status check (app-initiated)│──► Provider
+ (holds no      │      check → sign/encrypt with provider secrets → record        │   (Razorpay, Paytm,
+  provider      │                                                                │    Stripe, NPCI UPI,
+  secrets)   ◄──│ IN   callback · webhook · async response · reply                │◄──  BBPS, aggregators)
+  original +    │      verify → check → record → forward or block                 │
+  verdict       └────────────────────────────────────────────────────────────────┘
 ```
 
-| Component | Exposed to | Job |
+Every payment system has the same two steps, which is why one engine fits all:
+
+| Flow | ① Validation (authority fixes the amount) | ② Payment carried by | Result returns as | Format · protection |
+|---|---|---|---|---|
+| BBPS (COU ↔ NPCI) | Bill fetch | app → COU → NPCI | async response + Ack | XML · mTLS + XML signature |
+| UPI (PSP ↔ NPCI) | Validate address | `ReqPay` | `RespPay` + Ack | XML · mTLS + XML signature |
+| Razorpay | Create order | customer's browser (Checkout) | callback + webhook | JSON · TLS + HMAC-SHA256 |
+| Paytm-style gateway | Initiate transaction | customer's browser/app | callback + webhook | JSON · TLS + checksum |
+| Stripe | Create PaymentIntent | customer's browser/app | webhook | JSON · TLS + HMAC + timestamp |
+
+With gateways, step ② happens in the browser, so Aegis sees ① and the results. With NPCI it sees
+every leg.
+
+Adopting Aegis: point the provider base URL and the webhook/callback URLs at Aegis and move provider
+secrets into Aegis. Business code is unchanged.
+
+## 4. What Aegis checks
+
+**Inbound** (callback, webhook, async response, reply to an application request):
+
+| # | Check | Stops |
 |---|---|---|
-| **Ingress** | Internet (providers) | Verify webhook signature, write to Kafka, then ack |
-| **Verify API** | Merchant backend only | Route A: verify checkout proof, confirm, transition, answer synchronously |
-| **Processor** | — | Consume Kafka, dedupe, confirm, transition; re-check stuck transactions |
-| **Deliverer** | — | Send events to the merchant backend, signed, with retries, in order per order |
-| **Admin API** | Tailnet only | Timelines, search, manual retry |
+| 1 | Transport: mTLS or source allow-list where the provider supports it | Spoofed senders |
+| 2 | Decrypt, then **verify the signature** — every message, every path; missing, empty or weak secret means block | Every signature CVE above |
+| 3 | Freshness: message time within the provider's retry window | Replays of old messages |
+| 4 | Same message already seen (provider message ID) | Retries, replays |
+| 5 | Refers to a known validation; amount and currency match it | Swapped orders and amounts |
+| 6 | Same fact already passed (same payment, same outcome, via callback **and** webhook) | Double fulfilment |
+| 7 | No downgrade: `FAILED` after a `SUCCESS` on the same validation | Paid order cancelled |
 
-All are **one Spring Boot application** started with different roles
-(`AEGIS_ROLES=ingress,verify,processor,deliverer,admin`): deployed together today, scaled
-separately later.
+**Outbound** (only when the application asks):
 
-## 6. Flows
+| # | Check | Stops |
+|---|---|---|
+| 1 | Caller authenticated (mTLS + per-app key) and allowed to use that provider connection | Rogue internal callers |
+| 2 | Payment request matches an OK validation and its amount | Tampered amounts |
+| 3 | No new payment request while one is in flight or after success | Double debit |
+| 4 | Status checks within the provider's limits (NPCI: first ≥ 90 s after authentication, ≤ 3 in 2 h) | Provider penalties |
+| 5 | Signed/encrypted with provider secrets held only by Aegis | Secret sprawl |
 
-### 6.1 Route B — webhook
-1. **Receive** at `/in/{source}`, verify signature in constant time. Invalid → `401`, nothing stored.
-2. **Persist, then ack.** Write to Kafka (`acks=all`); only then `200`. Kafka unavailable → `503`
-   so the provider retries. *Nothing is acknowledged unless it is stored.*
-3. **Dedupe** on the provider's event ID. Seen → count and stop.
-4. **Confirm** — fetch payment **and** order from the provider; check status, amount, currency,
-   and that the payment belongs to the order. Mismatch → `REJECTED` + alert. Provider down → retry;
-   never forwarded unconfirmed.
-5. **Transition** under a row lock. Impossible or outdated move → recorded, not forwarded.
-6. **Notify** — a real change creates one event (e.g. `order.paid`) and a delivery.
+Every message is stored (encrypted at rest) with a verdict: `PASSED`, or `BLOCKED` with a reason.
+Passed inbound messages are forwarded to the application as **the original message, unchanged, plus
+Aegis's verdict**, over mTLS, signed by Aegis, optionally encrypted to the application's public key.
 
-### 6.2 Route A — checkout verification
-1. The customer's app sends `payment_id` + `signature` to the merchant backend.
-2. The backend calls `POST /verify` with those **and its own stored `order_id`** (never the client's).
-3. Aegis verifies the checkout signature, confirms with the provider, and runs the **same
-   transition** as 6.1 under the same lock.
-4. Responds with the order state and, if `PAID`, the **`order.paid` event ID** — the same ID Route B
-   would produce. The event is also delivered through the Deliverer, so a backend crash right after
-   the response cannot lose the fulfilment signal.
+## 5. Zero trust, concretely
 
-### 6.3 Both routes together
-Whichever route arrives first moves the order to `PAID` and creates `order.paid`. The other route
-finds the order already `PAID` and becomes a no-op (`STALE`). The backend fulfils on `order.paid`,
-deduplicated by its ID — **exactly one fulfilment per order**.
-
-### 6.4 Re-checking stuck transactions
-A transaction left in a non-final state (payment `AUTHORIZED`, recharge `PENDING`) is re-confirmed
-with the provider on a backoff schedule, even if no further callback arrives. Still unresolved
-after its deadline → alert.
-
-### 6.5 Recharge and bill-payment fulfilment (M3)
-Same engine, different adapter: aggregator or BBPS responses are verified, confirmed via the
-status-check API, and run through the fulfilment state machine. A refund signal
-(`fulfilment.failed`) is emitted only for a **confirmed, final** failure. See PAYMENT-FLOWS §8.
-
-### 6.6 Dynamic QR payments (M2)
-A dynamic QR code is a **payment target** like an order. `qr_code.credited` webhooks are verified,
-confirmed against both the QR code and the payment, and run through the same engine. A single-use
-fixed-amount QR behaves exactly like an order (`order.paid` once, extra payments `order.overpaid`);
-a multi-use QR emits `qr.payment_received` once per payment. See PAYMENT-FLOWS §7.
-
-## 7. What the merchant backend must do
-
-| Rule | Why |
+| Principle | How |
 |---|---|
-| Accept callbacks **only from Aegis** (network isolation + Aegis signature) | Otherwise attackers bypass Aegis |
-| **Fulfil only on `order.paid`** (or a `/verify` response with state `PAID`) | One trigger, both routes |
-| **Deduplicate on the event ID**, and keep a unique constraint "one fulfilment per order" | Delivery is at-least-once |
-| **Never cancel an order on `payment.failed`** — it means one attempt failed | The customer may retry and succeed |
-| On `order.overpaid`, refund the extra payment | Two attempts captured on one order |
-| Pass its own stored `order_id` to `/verify` | Stops "pay cheap, claim expensive" |
+| Never trust the network | mTLS on every hop Aegis controls; no host, IP or header is trusted for being "internal" |
+| Verify every message explicitly | One pipeline, no shortcuts: every message gets every check |
+| Never trust the sender's own claims | Amount and reference must match what the **authority** fixed at validation; browser-carried callbacks are untrusted input |
+| Least privilege | Provider secrets only in Aegis; each application has its own credentials and sees only its own connections |
+| Assume breach | Encrypted raw evidence of every message; alert on every block; fail closed |
+| Don't require trust in Aegis either | The application receives the provider's original message and signature and can re-verify it |
 
-## 8. Guarantees (stated precisely)
+**Residual risk.** With shared-secret (HMAC) providers, whoever steals the secret can sign a valid
+message for an existing validation with the right amount; a passive gateway cannot tell. Mitigations:
+- the secret exists only in Aegis;
+- dual-secret rotation without downtime;
+- for high-value handovers, the application asks for a status check **through Aegis** first.
 
-- **Delivery is at-least-once.** With the backend deduplicating on event ID, the effect is once.
-- **Ordering is per order**, not global.
-- **Strict mode (default):** nothing is reported as success without provider confirmation.
-  `verify_only` mode exists for providers without a confirmation API and is documented as weaker.
-- **One `order.paid` per order, forever.** A second captured payment produces `order.overpaid`,
-  never a second `order.paid`.
+NPCI and BBPS sign with private keys, so a leak on the application side cannot forge their messages.
+
+## 6. Guarantees
+
+- Nothing reaches the application without passing every check.
+- Nothing is acknowledged to a provider before it is durably stored.
+- No passed message is lost: forwarding retries until the application acknowledges.
+- A fact (payment X succeeded) is forwarded once, whichever channel reports it first.
+- Aegis never initiates a call to a provider.
+
+## 7. Architecture
+
+```
+ Provider ──► Ingress ──► Kafka ──► Checker ──► PostgreSQL ──► Forwarder ──► Application
+ Application ──► Gateway API ──► Provider        (inline: check, sign, send, verify reply, record)
+```
+
+| Component | Job |
+|---|---|
+| Ingress | Transport check, decrypt, signature; write to Kafka; return the provider's acknowledgement (2xx or `<Ack/>`) |
+| Checker | Freshness, duplicates, match, same fact, downgrade; store with verdict |
+| Gateway API | The application's outbound calls: check, sign, send, verify and store the reply |
+| Forwarder | Deliver passed messages to the application; retry with backoff |
+| Admin | Look up by reference, list blocks, re-forward, settings |
+
+Kafka lets Ingress acknowledge within provider deadlines (Razorpay: 5 s) without depending on the
+database. PostgreSQL enforces uniqueness and stores the records.
+
+## 8. Latency
+
+| Path | Added by Aegis |
+|---|---|
+| Acknowledging a provider message | signature check + Kafka write: milliseconds |
+| Application's outbound call | checks + one insert + signing: milliseconds on top of the provider's time |
+| Forwarding to the application | asynchronous, after acknowledgement |
 
 ## 9. Failure behaviour
 
-| Failure | Behaviour | Outcome |
-|---|---|---|
-| Kafka down | Ingress returns `503`; providers retry for hours | No loss |
-| PostgreSQL down | Ingress keeps accepting into Kafka; Verify API returns `503` | No loss; backend shows "processing" and Route B completes later |
-| Provider API down | Claims wait in `CONFIRMING`, retried with backoff, `HELD` + alert after 24 h | Nothing unconfirmed reported as success |
-| Verify API down/slow | Backend shows "payment processing"; Route B delivers `order.paid` when it can | Slower, not wrong |
-| Merchant backend down | Deliveries retried ~24 h, then `DEAD` + alert; manual replay | No loss |
-| Aegis crash mid-step | Every step idempotent; offsets committed after DB commit; leases expire and are retried | No double processing |
-| Forged-request flood | Rejected at Ingress before storage | Storage and real payments unaffected |
-| Aegis fully down | **Payments still succeed** (Aegis is not in the money path); notifications wait for provider retries | Delay only |
-
-## 10. Security model — zero trust for payment messages
-
-Zero trust means **no message, network location or component is trusted by default; every
-request is authenticated, verified against an authoritative source, and granted only the access it
-needs.** Aegis applies this to payment messages:
-
-| Zero-trust principle | How Aegis applies it |
+| Failure | Behaviour |
 |---|---|
-| **Never trust, always verify** | A valid signature is not enough. Every claim is confirmed with the provider's API before anyone acts on it (D4). |
-| **Verify explicitly, every time** | Each webhook, `/verify` call and recheck is checked independently — no "already trusted" sources, sessions or IP allow-lists. |
-| **Don't expose what you protect** | The merchant backend is never reachable from the internet for callbacks; it accepts only requests signed by Aegis. |
-| **Separate enforcement from decision** | Ingress enforces (rejects bad signatures before storage); the Processor decides (confirm + state machine). |
-| **Least privilege** | Ingress holds only webhook secrets — no database, no API keys. Verify/Processor hold API keys; the Deliverer holds backend signing secrets. Admin and `/verify` are never public. |
-| **Assume breach** | If a webhook secret leaks, confirmation still blocks forgeries. If Ingress is compromised, it holds no database or API credentials. |
-| **Fail closed** | Missing or weak secrets stop startup; unconfirmable claims are held, never forwarded. |
-| **Continuous monitoring** | Every rejection is a metric and an alert; every order has a full audit timeline. |
+| Kafka down | Ingress returns an error, so the provider retries; nothing is acknowledged unstored |
+| PostgreSQL down | Checker pauses (messages wait in Kafka); outbound calls refused (fail closed) |
+| Application down | Forwarder retries; messages wait in the database |
+| Provider down | Outbound call fails back to the application; Aegis does not retry it |
+| Aegis down | Providers retry their messages; outbound calls fail fast; money still moves |
 
-Operational controls:
-- **Secret rotation without downtime:** current + previous secrets accepted during rotation, for
-  provider webhooks and for Aegis's own signatures.
-- **Transport:** TLS on every hop; the Aegis → backend hop is authenticated by HMAC signature (mTLS
-  optional).
-- **Personal data:** raw bodies (may contain email, phone, UPI IDs) kept 90 days, masked in logs.
+## 10. Non-goals
 
-## 11. Latency, capacity and cost
+Order management · fulfilment · refunds · reconciliation · polling providers · card data · moving
+money.
 
-- **Customers rarely wait on Aegis.** Route B is asynchronous. Route A adds one provider API call
-  (~150–400 ms), which a careful backend makes anyway.
-- **Aegis sees only payment events** (1–5 per payment), a tiny fraction of the backend's traffic:
-  1 M payments/day ≈ 350 events/s at a 10× peak — two small instances plus Kafka and PostgreSQL that
-  most companies already run.
-- **The real throughput limit is the provider's API rate limit**, since every claim is confirmed.
-  Confirmations for the same order are coalesced, and concurrency per provider is capped.
-- **Aegis down never blocks a payment** — only delays notifications.
+## 11. Milestones
 
-## 12. Scaling path
-
-| Load | Change |
+| # | Milestone |
 |---|---|
-| Today (1 server) | All roles on one host, single Kafka broker, 12 partitions |
-| More webhooks | More Ingress replicas behind a load balancer (stateless) |
-| More processing | More Processors, up to the partition count |
-| More deliveries | More Deliverers (`SKIP LOCKED`, no coordination) |
-| PostgreSQL pressure | Monthly partitioning of `claims`, read replica for Admin, retention jobs |
-| Multi-host | Kafka 3 brokers (RF 3, `min.insync.replicas=2`); PostgreSQL primary + standby |
-
-No step changes data formats or component boundaries.
-
-## 13. Milestones
-
-| # | Deliverable | Done when |
-|---|---|---|
-| M0 | **Exploit Lab** — reference merchant with switchable flaws, Razorpay-compatible mock gateway, exploit scripts ([EXPLOIT-LAB.md](EXPLOIT-LAB.md)) | Every exploit succeeds without Aegis |
-| M1 | **Razorpay core** — Ingress, Verify API, Processor (with re-checks), Deliverer, Admin, metrics | All M0 exploits blocked; G1–G5 tests green |
-| M2 | Dynamic QR payments; Stripe adapter; load, crash and chaos tests; published benchmarks | G6, G7 met and documented |
-| M3 | **Recharge / bill-payment fulfilment** — aggregator adapter (simulated aggregator) | Forged/premature `FAILED` never yields a refund signal |
-| M4 | Partner API protection — mTLS/HMAC partners, rate limits (adds Redis) | |
-| M5 | Risk engine — card-testing detection from payment metadata | |
-| M6 | AI analyst — explains failures, drafts rules, simulates them on history | |
-
-Details: [LLD.md](LLD.md) · Choices: [DECISIONS.md](DECISIONS.md) · Lab: [EXPLOIT-LAB.md](EXPLOIT-LAB.md)
+| M0 | Exploit Lab: reproduce the CVE classes against a vulnerable reference application |
+| M1 | Core gateway with Razorpay: inbound checks, outbound proxy, forwarding, admin |
+| M2 | Stripe and Paytm-style adapters; load and failure tests |
+| M3 | NPCI-style XML adapters (BBPS, UPI) against a simulator |
+| M4 | Partner API protection and rate limits |

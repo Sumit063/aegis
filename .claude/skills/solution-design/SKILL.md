@@ -19,15 +19,15 @@ implementation needs no further design decisions.
    - Ports: exact `port.in` / `port.out` signatures.
    - Adapters: which ones implement/call them.
    - Patterns: name each pattern from ARCHITECTURE §5 you use and where. Prefer adding a class
-     (provider module, `ClaimRule`, policy entry) over editing core branches.
-   - Data: Flyway migration, indexes, locking (order row), events written, transaction boundaries.
+     (provider adapter, `Check`) over editing core branches.
+   - Data: Flyway migration, indexes, locking (validation row), unique keys, transaction boundaries.
      No network calls inside a transaction.
    - Configuration and fail-closed validation.
    - Failure behaviour for every dependency (DB, Kafka, provider, backend).
 4. **Check against the invariants** in `AGENTS.md`. For each, write one line on how the design
    keeps it, or "not affected".
 5. **Plan tests.** List unit, integration and scenario tests; map to LLD T-ids.
-6. **Look for gaps.** Concurrency (two routes, retries, crashes), idempotency, ordering, scale
+6. **Look for gaps.** Concurrency (callback and webhook together, retries, crashes), idempotency, ordering, scale
    (what happens at 10× load), security (secrets, PII, trust boundaries). Fix the design, don't
    defer silently.
 7. **Record decisions.** If a choice changes or adds to `DECISIONS.md`, update it in the same change.
