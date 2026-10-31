@@ -1,0 +1,7 @@
+# Pre-production (branch `staging`). Same settings as production, gateway test keys only.
+logging:
+  level:
+    dev.aegis: INFO
+
+aegis:
+  environment: staging

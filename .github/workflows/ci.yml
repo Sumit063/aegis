@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master, staging, dev]
   pull_request:
 
 permissions:
@@ -64,7 +64,8 @@ jobs:
 
   image:
     name: Container image
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Every push to an environment branch produces an image; CD decides where it goes.
+    if: github.event_name == 'push'
     needs: [commit-lint, build]
     runs-on: ubuntu-latest
     permissions:
@@ -91,7 +92,7 @@ jobs:
           push: true
           tags: |
             ${{ steps.meta.outputs.image }}:${{ github.sha }}
-            ${{ steps.meta.outputs.image }}:main
+            ${{ steps.meta.outputs.image }}:${{ github.ref_name }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}

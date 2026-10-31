@@ -28,7 +28,7 @@ scripts/setup-dev.sh            # once per clone: installs git hooks
 ./mvnw spotless:apply           # format
 ./mvnw test                     # unit + architecture tests (fast)
 ./mvnw verify                   # everything: format check, tests, integration tests, coverage
-docker compose -f deploy/compose.yaml up -d   # local stack
+docker compose -f deploy/compose.yaml -f deploy/compose.local.yaml up -d postgres kafka   # local infra
 ```
 
 Integration tests need a running Docker daemon.
@@ -47,7 +47,8 @@ Code that breaks one of these is wrong even if tests pass.
 6. **No network calls inside a database transaction.**
 7. **Fail closed:** missing/weak secrets stop startup; uncertainty means hold, not forward.
 8. **Aegis never moves money** and never handles raw card data.
-9. **Secrets and personal data never appear in logs, exceptions, tests or commits.**
+9. **Secrets and personal data never appear in logs, exceptions, tests, commits or profile files.**
+   Each environment's keys come only from its own environment variables.
 10. **Amounts are `long` minor units with a currency** — never `double`/`float`.
 
 ## Architecture rules (enforced by `ArchitectureTest`)
@@ -87,8 +88,9 @@ Code that breaks one of these is wrong even if tests pass.
 3. **After every change, run `./mvnw verify`** (at minimum `./mvnw test` for small steps, and
    `verify` before declaring done). Never report success on a red build.
 4. Self-review with the `code-review` skill before handing over.
-5. Commit in small logical steps with Conventional Commit messages; never bypass hooks
-   (`--no-verify`).
+5. Work on `feature/<ID>-<slug>` cut from `master`; open the PR into `dev`. Never commit directly
+   to `master`, `staging` or `dev` (CICD.md §2). Commit in small logical steps with Conventional
+   Commit messages; never bypass hooks (`--no-verify`).
 6. Update docs when behaviour or a decision changes (`LLD.md`, `DECISIONS.md`).
 7. Never commit secrets, real credentials or customer data. Test data uses obviously fake values.
 

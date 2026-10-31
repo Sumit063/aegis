@@ -1,12 +1,18 @@
 name: CD
 
+# Branch → environment:  dev → dev · staging → staging · master → prod
 on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-    branches: [main]
+    branches: [master, staging, dev]
   workflow_dispatch:
     inputs:
+      environment:
+        description: Environment to deploy to
+        required: true
+        type: choice
+        options: [dev, staging, prod]
       tag:
         description: Image tag (git SHA) to deploy
         required: true
@@ -15,20 +21,20 @@ permissions:
   contents: read
   packages: read
 
-concurrency:
-  group: deploy-production
-  cancel-in-progress: false
-
 jobs:
   deploy:
-    name: Deploy to production
-    # Only successful CI runs triggered by a push to main; never pull-request code.
+    name: Deploy to ${{ github.event.inputs.environment || (github.event.workflow_run.head_branch == 'master' && 'prod') || github.event.workflow_run.head_branch }}
+    # Only successful CI runs triggered by a push; never pull-request code.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: [self-hosted, aegis-production]
-    environment: production
+    environment: ${{ github.event.inputs.environment || (github.event.workflow_run.head_branch == 'master' && 'prod') || github.event.workflow_run.head_branch }}
+    concurrency:
+      group: deploy-${{ github.event.inputs.environment || github.event.workflow_run.head_branch }}
+      cancel-in-progress: false
     env:
+      TARGET: ${{ github.event.inputs.environment || (github.event.workflow_run.head_branch == 'master' && 'prod') || github.event.workflow_run.head_branch }}
       TAG: ${{ github.event.inputs.tag || github.event.workflow_run.head_sha }}
     steps:
       - uses: actions/checkout@v7
@@ -40,5 +46,5 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Deploy ${{ env.TAG }}
-        run: deploy/deploy.sh "$TAG"
+      - name: Deploy ${{ env.TAG }} to ${{ env.TARGET }}
+        run: deploy/deploy.sh "$TARGET" "$TAG"

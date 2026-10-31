@@ -1,0 +1,8 @@
+# Shared development environment (branch `dev`). Gateway sandbox/test keys only.
+# Every credential comes from the environment's .env on its host; nothing has a default.
+logging:
+  level:
+    dev.aegis: DEBUG
+
+aegis:
+  environment: dev

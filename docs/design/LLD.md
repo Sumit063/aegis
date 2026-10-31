@@ -258,7 +258,7 @@ orders          id uuid PK, source_id, kind (ORDER|QR_CODE), usage (SINGLE|MULTI
                 amount_minor bigint NULL (NULL = variable-amount QR), currency char(3),
                 state (OPEN|PAID|CLOSED),
                 paid_by_txn_id, version int, created_at, updated_at
-                UNIQUE (source_id, provider_order_id)
+                UNIQUE (source_id, kind, provider_order_id)
 
 transactions    id uuid PK, source_id, kind (PAYMENT|REFUND|FULFILMENT), provider_txn_id,
                 order_id, parent_txn_id, amount_minor bigint, refunded_minor bigint,
@@ -282,6 +282,10 @@ deliveries      id uuid PK, seq bigserial UNIQUE, notification_id, order_key, de
 
 delivery_attempts  id bigserial PK, delivery_id, attempt_no, started_at, duration_ms,
                    http_status, error
+
+runtime_config        key text PK, value jsonb, version int, updated_by, updated_at
+runtime_config_audit  id bigserial PK, key, old_value jsonb, new_value jsonb, version int,
+                      changed_by, changed_at, reason
 ```
 
 Amounts are `bigint` minor units. IDs are UUIDv7. Timestamps are `timestamptz` (UTC).
@@ -344,6 +348,68 @@ enabled role that is missing or under 16 characters → the application refuses 
 optional entries (the `_PREV` slot) are dropped, never treated as a valid empty secret. Validation
 is role-aware: an Ingress-only container receives only webhook secrets.
 
+### 11.1 Environments and profiles
+
+| Profile | Environment | Branch | Gateway keys | Defaults allowed |
+|---|---|---|---|---|
+| `local` | Developer machine | any | sandbox | Yes — local containers only |
+| `dev` | Shared development | `dev` | sandbox | No |
+| `staging` | Pre-production | `staging` | sandbox | No |
+| `prod` | Production | `master` | **live** | No |
+
+- `application.yaml` holds shared settings; `application-<profile>.yaml` holds what differs.
+  Selected with `SPRING_PROFILES_ACTIVE`; a laptop with none set runs `local`.
+- **Secrets are never in profile files.** Each environment's own keys live in that environment's
+  `.env` on its host (or a secret manager later) and reach the app as environment variables.
+  Profiles only reference them (`${RZP_KEY_SECRET}`) — with no default outside `local`, so a
+  missing secret stops startup.
+- **Key/environment guard (F06):** `prod` refuses gateway test keys (`rzp_test_…`); `local`, `dev`
+  and `staging` refuse live keys (`rzp_live_…`). Prevents test traffic in production and real
+  money in test environments.
+
+### 11.2 Runtime configuration (F18)
+
+Some settings must change **without a deployment** (an operator pauses a destination, slows
+retries during a backend incident, tightens a rate limit). These live in PostgreSQL, are edited
+through the Admin API, and every instance keeps an in-memory copy that is refreshed automatically.
+
+**What is runtime-editable, and what is not**
+
+| Runtime (database, Admin API) | Static (profile + environment variables, needs restart) |
+|---|---|
+| Retry/backoff schedules, timeouts, recheck schedules | Database, Kafka and network addresses |
+| Rate limits, provider concurrency caps | Roles of a process |
+| Destination enabled/paused, notification subscriptions | **All secrets and keys** |
+| Feature flags, alert thresholds | Strict vs `verify_only` mode (security posture) |
+| Log levels | Anything that would weaken verification |
+
+Secrets are never runtime-editable: a compromised admin token must not be able to swap a webhook
+secret or point deliveries at an attacker.
+
+**How it works**
+
+```
+ Admin API ──PUT /admin/config/{key} (expected version)──► validate ► DB transaction:
+                                                             runtime_config (version + 1)
+                                                             runtime_config_audit (old → new, who)
+                                                             NOTIFY aegis_config
+ every instance:  LISTEN aegis_config ──► reload changed keys ──► swap immutable snapshot
+                  + poll every 30 s (missed notifications)  ──► same
+ code reads:      RuntimeConfigPort.get(RetryPolicyKey) → in-memory snapshot, no DB call
+```
+
+- **Typed keys:** each key is declared once in code (`ConfigKey<T>`: name, type, default,
+  validator, description). Unknown keys and invalid values are rejected at the API.
+- **Snapshot pattern:** readers see one immutable `RuntimeConfigSnapshot` swapped atomically; a
+  request never sees half an update.
+- **Observer:** components that need to react (e.g. the delivery worker's concurrency) subscribe
+  to key changes.
+- **Optimistic concurrency:** edits carry the expected version; a stale edit is rejected (`409`).
+- **Audit and rollback:** every change is recorded; `POST /admin/config/{key}/rollback?version=n`.
+- **Failure:** if the database is unreachable, instances keep their last snapshot; on a fresh start
+  with no database, the service does not start anyway (it needs the database).
+- **Per environment:** each environment has its own database, so its own runtime configuration.
+
 ## 12. Admin API (tailnet only, bearer token)
 
 | Endpoint | Purpose |
@@ -352,6 +418,10 @@ is role-aware: an Ingress-only container receives only webhook secrets.
 | `GET /admin/claims?status=&since=` | Find rejected / held claims |
 | `POST /admin/claims/{id}/reconfirm` | `HELD` → `CONFIRMING` |
 | `POST /admin/deliveries/{id}/retry` | `DEAD` → `PENDING` |
+| `GET /admin/config` | All runtime keys: value, default, version, description |
+| `PUT /admin/config/{key}` | Change a runtime key (body: value + expected version) |
+| `GET /admin/config/{key}/history` | Audit trail |
+| `POST /admin/config/{key}/rollback?version=n` | Restore an earlier value |
 
 ## 13. Observability
 

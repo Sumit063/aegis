@@ -1,0 +1,16 @@
+# Developer machine. Talks to `docker compose -f deploy/compose.yaml -f deploy/compose.local.yaml`.
+# The only profile allowed to carry default credentials, and they only work against local containers.
+spring:
+  datasource:
+    url: ${AEGIS_DB_URL:jdbc:postgresql://localhost:5432/aegis}
+    username: ${AEGIS_DB_USER:aegis}
+    password: ${AEGIS_DB_PASSWORD:aegis-local-only}
+  kafka:
+    bootstrap-servers: ${AEGIS_KAFKA_BOOTSTRAP:localhost:9092}
+
+logging:
+  level:
+    dev.aegis: DEBUG
+
+aegis:
+  environment: local

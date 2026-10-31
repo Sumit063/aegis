@@ -10,7 +10,8 @@ class AegisPropertiesTest {
 
     @Test
     void reportsWhichRolesThisProcessRuns() {
-        AegisProperties properties = new AegisProperties(Set.of(Role.INGRESS, Role.PROCESSOR));
+        AegisProperties properties =
+                new AegisProperties(DeploymentEnvironment.LOCAL, Set.of(Role.INGRESS, Role.PROCESSOR));
 
         assertThat(properties.runs(Role.INGRESS)).isTrue();
         assertThat(properties.runs(Role.ADMIN)).isFalse();
@@ -18,9 +19,23 @@ class AegisPropertiesTest {
 
     @Test
     void refusesToStartWithoutRoles() {
-        assertThatThrownBy(() -> new AegisProperties(Set.of()))
+        assertThatThrownBy(() -> new AegisProperties(DeploymentEnvironment.LOCAL, Set.of()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("aegis.roles");
-        assertThatThrownBy(() -> new AegisProperties(null)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> new AegisProperties(DeploymentEnvironment.LOCAL, null))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void refusesToStartWithoutAnEnvironment() {
+        assertThatThrownBy(() -> new AegisProperties(null, Set.of(Role.ADMIN)))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("profile");
+    }
+
+    @Test
+    void onlyProdIsProduction() {
+        assertThat(DeploymentEnvironment.PROD.isProduction()).isTrue();
+        assertThat(DeploymentEnvironment.STAGING.isProduction()).isFalse();
     }
 }

@@ -7,23 +7,23 @@ set -euo pipefail
 REPO="${1:?usage: install.sh <owner/repo>}"
 : "${RUNNER_TOKEN:?set RUNNER_TOKEN}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-DEPLOY_DIR="$HOME/aegis/deploy"
+DEPLOY_ROOT="$HOME/aegis"
 DOCKER_GID="$(getent group docker | cut -d: -f3)"
 
-mkdir -p "$DEPLOY_DIR"
+mkdir -p "$DEPLOY_ROOT"
 docker build -t aegis-runner:local "$HERE"
 docker rm -f aegis-runner >/dev/null 2>&1 || true
 docker volume create aegis-runner-state >/dev/null
 
-# Host networking so the health check reaches 127.0.0.1:8081; the deploy dir is mounted at the
-# same path so compose state survives across jobs.
+# Host networking so health checks reach 127.0.0.1:<port>; the deploy root (one folder per
+# environment) is mounted at the same path so compose state and .env files survive across jobs.
 docker run -d --name aegis-runner --restart unless-stopped \
   --network host \
   --group-add "$DOCKER_GID" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v aegis-runner-state:/home/runner \
-  -v "$DEPLOY_DIR:$DEPLOY_DIR" \
-  -e AEGIS_DEPLOY_DIR="$DEPLOY_DIR" \
+  -v "$DEPLOY_ROOT:$DEPLOY_ROOT" \
+  -e AEGIS_DEPLOY_ROOT="$DEPLOY_ROOT" \
   -e RUNNER_URL="https://github.com/$REPO" \
   -e RUNNER_TOKEN="$RUNNER_TOKEN" \
   aegis-runner:local >/dev/null

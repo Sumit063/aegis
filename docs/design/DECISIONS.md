@@ -159,6 +159,30 @@ IDE generation cover it without annotation processing.
 Every feature has a reviewed design note in `docs/features/` before code, and ships with its tests
 in small Conventional Commits. AI agents follow `AGENTS.md` and the project skills.
 
+### D27 — Four environments, selected by Spring profile
+`local`, `dev`, `staging`, `prod`. Shared settings in `application.yaml`, differences in
+`application-<profile>.yaml`. Secrets never in profile files: each environment's keys live in its
+own `.env` on its host and arrive as environment variables, with no defaults outside `local`.
+Production refuses test gateway keys; other environments refuse live keys. On the single host,
+each environment is an isolated compose project with its own database, Kafka and ports
+(prod 8080/8081, staging 8180/8181, dev 8280/8281).
+
+### D28 — Runtime configuration in PostgreSQL with in-memory snapshots
+Operational settings (retry schedules, rate limits, destination pause, feature flags, log levels)
+are editable through the Admin API without a deployment. Stored in `runtime_config` with an audit
+table; each instance holds an immutable in-memory snapshot refreshed by `LISTEN/NOTIFY` plus a
+30-second poll. Secrets, addresses, roles and verification mode are **not** runtime-editable.
+Rejected: Spring Cloud Config server (another service to run and secure), a config file reloaded
+from disk (no audit, per-host drift), Redis (not yet in the stack, no transactional audit).
+
+### D29 — Branching: environment branches with promotion
+`master` = production, `staging` = pre-production, `dev` = shared development. Work happens on
+`feature/<ID>-<slug>` branches cut from `master`, merged by pull request into `dev`, then promoted
+`dev → staging → master` by pull requests. Hotfixes: `hotfix/<slug>` from `master` → `master`,
+then merged back into `staging` and `dev`. Each environment branch deploys to its environment
+after CI passes. Promoting whole branches (instead of merging each feature into each branch
+separately) keeps the three branches from drifting apart.
+
 ## Design review log
 
 Issues found while reviewing the design, before any code:

@@ -1,7 +1,7 @@
-# Aegis stack: PostgreSQL + Kafka (KRaft, single node) + Aegis.
-# Production: started by deploy/deploy.sh with secrets in deploy/.env.
-# Local: docker compose -f deploy/compose.yaml up -d postgres kafka   (then run the app from the IDE)
-name: aegis
+# Aegis stack for one environment: PostgreSQL + Kafka (KRaft, single node) + Aegis.
+# Servers: deploy/deploy.sh <dev|staging|prod> <tag> runs it as project aegis-<env> with that
+#          environment's own .env (secrets, ports, profile). Environments share nothing.
+# Laptop:  docker compose -f deploy/compose.yaml -f deploy/compose.local.yaml up -d postgres kafka
 
 services:
   postgres:
@@ -13,8 +13,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aegis-local-only}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aegis -d aegis"]
       interval: 5s
@@ -42,8 +40,6 @@ services:
       KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
       - kafkadata:/var/lib/kafka/data
-    ports:
-      - "127.0.0.1:9092:9092"
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
       interval: 10s
@@ -51,7 +47,7 @@ services:
       retries: 20
 
   aegis:
-    image: ${AEGIS_IMAGE:-ghcr.io/sumit063/aegis}:${AEGIS_TAG:-main}
+    image: ${AEGIS_IMAGE:-ghcr.io/sumit063/aegis}:${AEGIS_TAG:-master}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -59,14 +55,15 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
       AEGIS_DB_URL: jdbc:postgresql://postgres:5432/aegis
       AEGIS_DB_USER: aegis
       AEGIS_DB_PASSWORD: ${POSTGRES_PASSWORD:-aegis-local-only}
       AEGIS_KAFKA_BOOTSTRAP: kafka:29092
       AEGIS_ROLES: ${AEGIS_ROLES:-ingress,verify,processor,deliverer,admin}
     ports:
-      - "127.0.0.1:8080:8080"
-      - "127.0.0.1:8081:8081"
+      - "127.0.0.1:${AEGIS_HTTP_PORT:-8080}:8080"
+      - "127.0.0.1:${AEGIS_MANAGEMENT_PORT:-8081}:8081"
 
 volumes:
   pgdata:

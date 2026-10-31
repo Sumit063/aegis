@@ -1,80 +1,105 @@
-# CI/CD and Deployment
+# CI/CD, Environments and Branching
 
-## 1. Where Aegis runs
+## 1. Environments
 
-| Environment | Where | How it is reached |
-|---|---|---|
-| **Local** | Developer machine, Docker (Colima or Docker Desktop) | `localhost` |
-| **Production (current)** | One Ubuntu host on a private Tailscale network, as the unprivileged `aegis` user, Docker Compose | Tailnet only; provider webhooks via Tailscale Funnel (HTTPS) when enabled |
-| **Later** | Multiple hosts or Kubernetes | Same image, same configuration model — see HLD §12 |
+| Environment | Profile | Branch | Where | Ports (HTTP / management) | Gateway keys |
+|---|---|---|---|---|---|
+| Local | `local` | any | Developer machine, Docker (Colima or Docker Desktop) | 8080 / 8081 | sandbox |
+| Dev | `dev` | `dev` | Ubuntu host, compose project `aegis-dev` | 8280 / 8281 | sandbox |
+| Staging | `staging` | `staging` | Ubuntu host, compose project `aegis-staging` | 8180 / 8181 | sandbox |
+| Production | `prod` | `master` | Ubuntu host, compose project `aegis-prod` | 8080 / 8081 | **live** |
 
-The host is **never opened to inbound connections from GitHub**. Deployment is pulled, not pushed.
+Each server environment is fully isolated: its own PostgreSQL, Kafka, volumes, `.env` with its own
+secrets, and its own runtime configuration. They share only the host. All ports bind to
+`127.0.0.1`; the host is on a private Tailscale network and public webhook ingress is added
+explicitly (Funnel) per environment in M1. Moving an environment to its own host later changes
+nothing but where its runner lives.
 
-## 2. Pipeline
+## 2. Branching
 
 ```
- developer ──commit──► local hooks: format, commit message ──push──► local hook: full build
-                                                                         │
- GitHub ─────────────────────────────────────────────────────────────────▼──────────────
-  CI (GitHub-hosted runner, every push and PR)
-    1. commit-lint      Conventional Commit messages in the pushed range
-    2. build            ./mvnw verify: format check, compile, unit tests, ArchUnit,
-                        integration tests (Testcontainers), coverage gate
-    3. image (main)     build container image, push ghcr.io/<owner>/aegis:<sha> and :main
-  CD (self-hosted runner on the production host, main only, after CI succeeds)
-    4. deploy           pull :<sha>, docker compose up -d, wait for /actuator/health
-    5. rollback         if unhealthy: redeploy the previous image tag, fail the job
+ feature/F04-domain-model ──PR──► dev ──PR──► staging ──PR──► master
+        ▲  cut from master          │            │              │
+        │                           ▼            ▼              ▼
+        │                       deploy dev   deploy staging  deploy prod
+ hotfix/<slug> ──PR──► master, then merged back into staging and dev
 ```
 
-## 3. Why this shape
+| Branch | Purpose | Merges in from | Protected |
+|---|---|---|---|
+| `master` | Production; always releasable | `staging`, `hotfix/*` | yes |
+| `staging` | Pre-production verification | `dev`, back-merges from `master` | yes |
+| `dev` | Integration of finished features | `feature/*`, back-merges | yes |
+| `feature/<ID>-<slug>` | One backlog feature | cut from `master` | no |
+| `hotfix/<slug>` | Urgent production fix | cut from `master` | no |
+
+Promoting whole branches (`dev → staging → master`) instead of merging each feature into every
+branch keeps the environment branches identical in content, just at different points in time.
+
+## 3. Pipeline
+
+```
+ commit ─► local hooks: format, secrets, commit message ─► push ─► pre-push: ./mvnw verify
+                                                                     │
+ GitHub ─────────────────────────────────────────────────────────────▼──────────────────────
+  CI  (GitHub-hosted, every push to master/staging/dev and every pull request)
+    1. commit-lint    Conventional Commits in the pushed range
+    2. build          ./mvnw verify: format, compile, unit, ArchUnit, integration, coverage
+    3. image (push)   ghcr.io/<owner>/aegis:<sha> and :<branch>
+  CD  (self-hosted runner on the host, after CI succeeds on a push)
+    4. deploy         branch → environment; pull :<sha>; compose up; wait for readiness
+    5. rollback       unhealthy → previous tag of that environment; job fails
+```
+
+Manual deploys and rollbacks: run the CD workflow by hand with an environment and a SHA.
+
+## 4. Why this shape
 
 | Decision | Reason | Rejected |
 |---|---|---|
-| CI on GitHub-hosted runners | Clean, disposable machines; Docker available for Testcontainers | Building on the production host (slow, pollutes it) |
-| Images in GitHub Container Registry | Same account as the code; `GITHUB_TOKEN` can push; no extra service | Docker Hub (rate limits, separate credentials) |
-| **CD via a self-hosted runner on the host** | The runner connects **outbound** to GitHub; no inbound port, no SSH key or Tailscale key stored in GitHub. Zero-trust friendly. | SSH from GitHub (needs inbound access + stored key); Tailscale GitHub Action (stores a tailnet auth key in GitHub) |
-| Immutable tags (`<git sha>`) | Every deploy is traceable and reversible | `latest` (ambiguous, no rollback) |
-| Health-gated deploy with automatic rollback | A bad image never stays live | Manual verification |
-| Secrets only on the host (`deploy/.env`, mode 600) | Production secrets never enter GitHub | GitHub secrets for runtime credentials |
+| CI on GitHub-hosted runners | Clean machines; Docker available for Testcontainers | Building on the production host |
+| Images in GitHub Container Registry | Same account as the code; `GITHUB_TOKEN` can push and pull | Docker Hub (rate limits, extra credentials) |
+| **CD via a self-hosted runner on the host** | The runner connects **outbound** to GitHub; no inbound port, no SSH or Tailscale key stored in GitHub | SSH from GitHub; Tailscale GitHub Action |
+| Immutable tags (`<git sha>`) | Every deploy traceable and reversible | `latest` |
+| Health-gated deploy with automatic rollback | A bad image never stays live | Manual checks |
+| Secrets only on the host, per environment | Production secrets never enter GitHub; environments can't read each other's | GitHub secrets for runtime credentials |
 
-Security note: the self-hosted runner is used **only** for the deploy job on `main`, never for
-pull-request code, and the repository is private. Forks cannot trigger it.
+The self-hosted runner only runs the deploy job for pushes to environment branches — never
+pull-request code — and the repository is private, so forks cannot reach it.
 
-## 4. Runtime layout on the host
+## 5. Host layout
 
 ```
 /home/aegis/
-  actions-runner/            GitHub Actions runner (container, restarts automatically)
-  aegis/deploy/              compose.yaml, deploy.sh (updated by each deploy)
-  aegis/deploy/.env          secrets and image tag (created once, never committed)
-  backups/                   nightly PostgreSQL dumps (M1)
+  aegis/dev/        compose.yaml, .env (dev secrets, mode 600)
+  aegis/staging/    compose.yaml, .env (staging secrets)
+  aegis/prod/       compose.yaml, .env (production secrets)
+  backups/          nightly PostgreSQL dumps per environment (M1)
+ container aegis-runner   GitHub Actions runner (restarts automatically)
 ```
 
-Containers: `postgres` (17), `kafka` (4.x, KRaft single node), `aegis` (all roles).
-Ports bind to `127.0.0.1` only; public webhook ingress is added explicitly via Funnel in M1.
+Adding a secret for an environment: edit that environment's `.env` on the host, then redeploy
+(run CD manually with the current SHA). Runtime-tunable settings are changed through the Admin API
+instead (LLD §11.2).
 
-## 5. Quality gates
+## 6. Quality gates
 
 | Gate | Where | Tool |
 |---|---|---|
-| Formatting | pre-commit hook, CI | Spotless (Palantir Java Format) |
-| Commit message | commit-msg hook, CI | Conventional Commits (`scripts/check-commit-msg.sh`) |
-| Full build before push | pre-push hook | `./mvnw verify` |
+| Formatting | pre-commit, CI | Spotless (Palantir Java Format) |
+| Secrets in diffs | pre-commit | pattern check (`.githooks/pre-commit`) |
+| Commit message | commit-msg, CI | Conventional Commits (`scripts/check-commit-msg.sh`) |
+| Full build before push | pre-push | `./mvnw verify` |
 | Architecture rules | build | ArchUnit |
+| Profile safety | build | `ProfilesTest`: no default credentials outside `local` |
 | Coverage | build | JaCoCo ≥ 80 % lines (domain, application) |
 | Toolchain | build | Maven Enforcer: Java 25, Maven ≥ 3.9 |
 | Dependency updates | weekly | Dependabot (Maven, Actions, Docker) |
 
-## 6. Commit messages
+## 7. Commit messages
 
 ```
 <type>(<optional scope>): <summary in imperative mood>
-
 types: feat fix docs test refactor perf build ci chore revert
 example: feat(ingress): verify Razorpay webhook signatures
 ```
-
-## 7. Branching
-
-Trunk-based: short-lived branches → pull request → CI green → squash merge to `main` → automatic
-deploy. Recommended branch protection on `main`: require CI, require linear history.

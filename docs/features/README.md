@@ -11,7 +11,9 @@ implemented, tested and merged on its own.
 3. **Implement** — inside-out: domain → application → adapters, tests alongside, build verified
    after every change (skill: `implement-feature`).
 4. **Review code** — against the design and the checklist (skill: `code-review`).
-5. **Merge** — CI green, squash merge, automatic deploy. Status → `done`.
+5. **Merge and promote** — branch `feature/<ID>-<slug>` from `master` → PR into `dev` (deploys
+   to dev) → PR `dev → staging` (deploys to staging) → PR `staging → master` (deploys to
+   production). Status → `done` when it reaches `master`.
 
 ## Backlog
 
@@ -35,5 +37,6 @@ implemented, tested and merged on its own.
 | F15 | Admin API: timelines, reconfirm, retry | M1 | F05 | planned |
 | F16 | Observability: metrics, alerts, dashboards, log masking | M1 | F09–F13 | planned |
 | F17 | Lab run through Aegis; M1 acceptance (T1–T19) | M1 | F03, F09–F16 | planned |
+| F18 | Runtime configuration: typed keys, admin edit, audit, live sync to all instances | M1 | F05, F15 | planned |
 
 M2–M6 features are added here when M1 is done.

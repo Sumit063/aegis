@@ -1,0 +1,7 @@
+# Production (branch `master`). Live gateway keys. No defaults anywhere: a missing secret stops startup.
+logging:
+  level:
+    dev.aegis: INFO
+
+aegis:
+  environment: prod
