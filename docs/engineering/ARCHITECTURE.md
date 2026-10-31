@@ -96,7 +96,7 @@ aegis-service/src/main/java/dev/aegis/
 | **Strategy** | Signature schemes (HMAC, checksum, XML-DSig), ack formats, backoff | Swap per provider by configuration |
 | **Chain of Responsibility** | `Check` chain (freshness → duplicate → match → amount → downgrade → same fact) | Each check isolated and tested alone; first failure gives the block reason |
 | **Value Object** | `Money`, `ProviderId`, references as records | Validation at construction |
-| **Idempotent Consumer** | Unique keys on message ID and same fact | At-least-once input, once-only forwarding |
+| **Idempotent Consumer** | Message ID and same-fact checks on the locked payment row | At-least-once input, once-only forwarding |
 | **Competing Consumers** | Kafka partitions; Forwarder claims rows with `FOR UPDATE SKIP LOCKED` | Scale by adding instances |
 | **Retry with backoff + jitter, Circuit Breaker** | Forwarding to the application | Survive a slow or failing application |
 | **Decorator** | Metrics/tracing around ports | Cross-cutting concerns outside business code |
@@ -122,7 +122,8 @@ See the `add-provider` skill.
   `adapter.out.persistence`.
 - Flyway owns the schema; Hibernate runs with `ddl-auto=validate`.
 - Native SQL for the two places where JPA would hide essential behaviour: `INSERT … ON CONFLICT`
-  (duplicates) and `SELECT … FOR UPDATE` / `SKIP LOCKED` (validation lock, forwarding queue).
+  (one row per payment) and `SELECT … FOR UPDATE` / `SKIP LOCKED` (validation lock, forwarding queue).
+- The `data` and `messages` JSON fields map to Java records with `@JdbcTypeCode(SqlTypes.JSON)`.
 - Evidence columns are encrypted/decrypted through `EvidenceCipherPort`, never stored in clear.
 - `open-in-view=false`. **Never call the network inside a database transaction.**
 

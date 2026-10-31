@@ -40,11 +40,15 @@ Every outbound call (validation, payment request, status check) starts with an a
 ### D3 — Two tables: `validations` and `payments`
 Every payment system has two steps: a validation that fixes the amount, then payment messages that
 refer to it.
-- `validations` holds one row per validation call: request, reply, and the authority's amount.
-- `payments` holds one row per payment message: requests, callbacks, webhooks, async responses and
-  status-check replies, each with its verdict.
-- **Rejected:** separate tables per message type (same columns, same checks, more joins); one table
-  for both steps (validations are the reference every payment row is checked against).
+- `validations`: **one row per validation**: its whole cycle (request and reply) in a JSON field,
+  plus the authority's amount and a summary status (`CREATED`, `FAILED`, `PAID`).
+- `payments`: **one row per payment**: every message of that payment (payment request and its
+  acknowledgement, callback, webhooks, async responses, status-check requests and replies), each
+  with its verdict, appended to a JSON field, plus a summary status (latest passed outcome).
+- **Why one row per cycle:** one place to read everything about a payment; one lock covers all its
+  checks; no joins.
+- **Rejected:** one row per message (many rows to assemble per payment); separate tables per message
+  type; one table for both steps (validations are the reference payments are checked against).
 
 ### D4 — Store originals; forward them unchanged
 Every message is stored exactly as received (encrypted at rest) and forwarded to the application
@@ -54,10 +58,10 @@ unchanged, together with Aegis's verdict and the provider's signature headers.
   trust Aegis blindly).
 
 ### D5 — Uniqueness and ordering are enforced by the database
-- Same message: `UNIQUE (provider, message_id)`.
-- Same fact (callback and webhook both report the same success): a partial unique index.
-- Checks on one validation never race: the validation row is locked (`FOR UPDATE`) for the check and
-  insert.
+- One row per payment: `UNIQUE (provider, payment_ref)`.
+- All checks for a payment run inside one transaction holding the validation row lock
+  (`FOR UPDATE`), reading and writing the payment row: same message (message ID already in the
+  row), same fact (status already equal), downgrade (validation `PAID`), double payment.
 - **Why:** correct with any number of instances and with redelivery from Kafka; no in-memory caches
   to keep consistent.
 
@@ -147,12 +151,13 @@ Integer minor units + ISO currency, never floats; database identity keys; `times
 
 | # | Issue | Fix |
 |---|---|---|
-| R1 | A forged message reusing a real message ID would make the genuine one look like a duplicate | Rejected messages are stored under an Aegis ID (LLD §5) |
-| R2 | Callback and webhook report the same payment, so the application could act twice | Same-fact unique index (D5) |
+| R1 | A forged message reusing a real message ID would make the genuine one look like a duplicate | Untrusted messages get their own row and never touch a genuine payment's row (LLD §5) |
+| R2 | Callback and webhook report the same payment, so the application could act twice | Same-fact check on the locked payment row (D5) |
 | R3 | A late `FAILED` for an earlier attempt has a different payment reference | Downgrade rule is per validation, not per payment |
 | R4 | Razorpay's browser callback carries no amount | Its signature binds payment to order; the order's amount is the validated one |
 | R5 | Application status checks could break NPCI limits and cause penalties | Limits enforced in Aegis per adapter |
 | R6 | A message replayed after its row is purged would look new | Retention (180 d) far exceeds every freshness window |
+| R9 | One row per payment could grow without bound under repeated messages | Repeats only increase a counter; bodies capped at 64 KB |
 | R7 | Leaked HMAC secret | Accepted residual risk with mitigations (D18) |
 | R8 | Retrying a payment request while the first is pending could debit twice | `DUPLICATE_PAYMENT` while in flight |
 

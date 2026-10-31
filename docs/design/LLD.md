@@ -42,13 +42,14 @@ Ingress (synchronous, before acknowledging)
 Checker (Kafka consumer, one database transaction per message)
   6. parse         adapter.parse() → message_id, provider_ref, payment_ref, outcome, amount, sent_at
   7. freshness     sent_at within connection.freshness (Razorpay: 25 h)  → REPLAY
-  8. duplicate     message_id already stored → duplicates + 1, stop (enforced by the unique key
-                   at insert: ON CONFLICT … DO UPDATE SET duplicates = duplicates + 1)
-  9. lock          SELECT validation WHERE provider_ref = ? FOR UPDATE   → none: NO_VALIDATION
+  8. lock          SELECT validation WHERE provider_ref = ? FOR UPDATE   → none: NO_VALIDATION
+                   then INSERT payment row (provider, payment_ref) ON CONFLICT DO NOTHING; load it
+  9. duplicate     message_id already in payment.messages → that entry's duplicates + 1, stop
  10. amount        message amount/currency (when present) = validation   → AMOUNT_MISMATCH
- 11. downgrade     outcome FAILED and a PASSED SUCCESS exists on it      → DOWNGRADE
- 12. same fact     PASSED (validation, payment_ref, outcome) exists       → DUPLICATE
- 13. store         verdict; PASSED inbound → forward_status = PENDING
+ 11. downgrade     outcome FAILED and validation.status = PAID            → DOWNGRADE
+ 12. same fact     outcome equals payment.status already passed           → DUPLICATE
+ 13. store         append the message to payment.messages with its verdict; if PASSED: set
+                   payment.status, set validation.status = PAID on SUCCESS, mark for forwarding
  14. commit DB, then commit the Kafka offset
 ```
 
@@ -65,16 +66,17 @@ with `ref`, `verdict` and an Aegis signature over both.
 ```
   1. authenticate  mTLS client certificate + app key; connection belongs to this application → 403
   2. parse         adapter.parseRequest() → merchant_ref, amount, provider_ref
-  3. checks        payment request: lock validation, must be OK, amount equal,
-                   no PASSED SUCCESS and no request still in flight            → BLOCKED (409)
+  3. checks        payment request: lock validation, status must be CREATED (not FAILED/PAID),
+                   amount equal, no payment of it still PENDING                → BLOCKED (409)
                    status check: within adapter.enquiryLimits()                 → RATE_LIMIT (429)
   4. sign/encrypt  adapter.prepare(request, secrets)
   5. send          to the provider, with timeout; no database transaction is open
-  6. reply         verify the reply (signature or TLS), store row, return the reply + verdict
+  6. reply         verify the reply (signature or TLS); one transaction: write the request and
+                   reply into the row (validation row, or a message in the payment row); return
+                   the reply + verdict
 ```
 
-"In flight" = a `PASSED` payment request whose `payment_ref` has no `SUCCESS` or `FAILED` result
-yet. Only an application status check, or a result arriving, clears it. Aegis never decides
+"In flight" = a payment row of this validation whose `status` is still `PENDING`. Only an application status check, or a result arriving, clears it. Aegis never decides
 on its own that a request has expired.
 
 ## 5. Block reasons
@@ -91,9 +93,10 @@ on its own that a request has expired.
 | `RATE_LIMIT` | outbound 3 |
 | `UNPARSEABLE` | inbound 6 |
 
-Message-ID duplicates are not separate rows; they increase `duplicates` on the first row.
-`BAD_SIGNATURE` rows are stored under an Aegis-generated `message_id` (`unverified:<uuid>`), so a forged
-message can never claim a real message ID and cause the genuine message to be dropped as a duplicate.
+A repeated message is not stored again; its entry's `duplicates` count goes up.
+Messages that fail before they can be trusted (`BAD_SIGNATURE`, `UNPARSEABLE`) get **their own row**
+with no validation and no `payment_ref`, so a forged message can never write into, or claim a message
+ID inside, a genuine payment's row.
 
 ## 6. Provider adapter (SPI)
 
@@ -124,6 +127,9 @@ Status mapping is strict. Only the provider's final-success status maps to `SUCC
 
 ## 7. Schema (PostgreSQL)
 
+**One row per validation, one row per payment.** Everything exchanged during that cycle is written
+into the row's JSON field.
+
 ```sql
 CREATE TABLE validations (
   id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -132,41 +138,30 @@ CREATE TABLE validations (
   provider_ref  text,                          -- order_X / bill-fetch ref; NULL if the call failed
   amount        bigint      CHECK (amount >= 0),  -- minor units, from the provider's reply
   currency      char(3),
-  ok            boolean     NOT NULL,          -- provider accepted the validation
-  request       bytea       NOT NULL,          -- encrypted
-  response      bytea,                         -- encrypted
+  status        text        NOT NULL CHECK (status IN ('CREATED','FAILED','PAID')),
+  data          jsonb       NOT NULL,          -- the whole call: request + reply (below)
   created_at    timestamptz NOT NULL,
+  updated_at    timestamptz NOT NULL,
   UNIQUE (provider, provider_ref)
 );
 
 CREATE TABLE payments (
   id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  validation_id   bigint REFERENCES validations(id),  -- NULL only when BLOCKED NO_VALIDATION
+  validation_id   bigint REFERENCES validations(id),  -- NULL: untrusted or unmatched message
   provider        text        NOT NULL,
-  type            text        NOT NULL CHECK (type IN
-                  ('PAY_REQUEST','STATUS_CHECK','CALLBACK','WEBHOOK','ASYNC_RESPONSE')),
-  message_id      text        NOT NULL,          -- provider's message id; Aegis id for outbound
-  payment_ref     text,                          -- pay_Y / UPI txn id / BBPS txn ref
-  outcome         text        CHECK (outcome IN ('SUCCESS','FAILED','PENDING','REFUNDED','OTHER')),
+  payment_ref     text,                          -- pay_Y / UPI txn id / BBPS txn ref; NULL if untrusted
   amount          bigint,
   currency        char(3),
-  body            bytea       NOT NULL,          -- encrypted: received message, or request sent
-  reply           bytea,                         -- encrypted: synchronous reply to an outbound call
-  headers         jsonb,                         -- includes the provider's signature
-  verdict         text        NOT NULL CHECK (verdict IN ('PASSED','BLOCKED')),
-  reason          text,                          -- block reason (§5)
-  duplicates      int         NOT NULL DEFAULT 0,
-  forward_status  text        CHECK (forward_status IN ('PENDING','DELIVERED','FAILED')),
-  forward_attempts smallint   NOT NULL DEFAULT 0,
-  next_forward_at timestamptz,
-  received_at     timestamptz NOT NULL,
-  UNIQUE (provider, message_id)
+  status          text        CHECK (status IN ('PENDING','SUCCESS','FAILED','REFUNDED')),
+                                                 -- latest PASSED outcome; NULL if nothing passed
+  messages        jsonb       NOT NULL DEFAULT '[]',  -- every message of this payment (below)
+  forward_due_at  timestamptz,                   -- set while a passed message awaits forwarding
+  created_at      timestamptz NOT NULL,
+  updated_at      timestamptz NOT NULL,
+  UNIQUE (provider, payment_ref)
 );
--- one forwarded fact per payment and outcome (callback and webhook report the same success)
-CREATE UNIQUE INDEX payments_one_fact ON payments (validation_id, payment_ref, outcome)
-  WHERE verdict = 'PASSED' AND type IN ('CALLBACK','WEBHOOK','ASYNC_RESPONSE');
 CREATE INDEX payments_by_validation ON payments (validation_id);
-CREATE INDEX payments_forward_due   ON payments (next_forward_at) WHERE forward_status = 'PENDING';
+CREATE INDEX payments_forward_due   ON payments (forward_due_at) WHERE forward_due_at IS NOT NULL;
 
 CREATE TABLE config (
   key text PRIMARY KEY, value jsonb NOT NULL, version int NOT NULL,
@@ -174,14 +169,41 @@ CREATE TABLE config (
 );
 ```
 
+`validations.data`:
+```json
+{ "request":  { "at": "2026-11-01T10:00:00Z", "headers": {…}, "body": "enc:v1:…" },
+  "response": { "at": "2026-11-01T10:00:00.180Z", "httpStatus": 200, "body": "enc:v1:…" } }
+```
+
+`payments.messages`: one entry per distinct message, in arrival order.
+```json
+[ { "n": 1, "type": "CALLBACK", "messageId": "cb:pay_Y", "at": "…", "outcome": "SUCCESS",
+    "verdict": "PASSED", "headers": {…}, "body": "enc:v1:…",
+    "forward": { "status": "DELIVERED", "attempts": 1, "at": "…" } },
+  { "n": 2, "type": "WEBHOOK", "messageId": "evt_123", "at": "…", "outcome": "SUCCESS",
+    "verdict": "BLOCKED", "reason": "DUPLICATE", "duplicates": 3, "headers": {…}, "body": "enc:v1:…" },
+  { "n": 3, "type": "STATUS_CHECK", "messageId": "aegis:…", "at": "…", "outcome": "SUCCESS",
+    "verdict": "PASSED", "request": "enc:v1:…", "reply": "enc:v1:…" } ]
+```
+Entry `type`: `PAY_REQUEST` (with its synchronous `reply`, e.g. `<Ack/>`), `STATUS_CHECK` (request and
+reply), `CALLBACK`, `WEBHOOK`, `ASYNC_RESPONSE`.
+
 | Rule | How it is enforced |
 |---|---|
-| Same message twice | `UNIQUE (provider, message_id)` |
-| Same fact twice | `payments_one_fact` partial unique index |
-| Checks on one validation never race | `SELECT … FOR UPDATE` on the validation row, then check and insert in one transaction |
-| No network call inside a transaction | Outbound: send first, then one transaction to store. Inbound: the Checker makes no network calls. |
-| Evidence is private | `request`, `response`, `body`, `reply` encrypted with AES-256-GCM (key from the environment, key id prefixed for rotation) |
+| One row per payment | `UNIQUE (provider, payment_ref)`; created with `INSERT … ON CONFLICT DO NOTHING` |
+| Checks never race | The validation row is locked (`FOR UPDATE`) and the payment row is read and written in the same transaction; all checks read the locked rows |
+| Same message twice | `messageId` looked up in the locked row's `messages` |
+| Same fact twice | Payment `status` already equals the outcome |
+| No downgrade | `validations.status = PAID` |
+| No double payment | `validations.status` must be `CREATED` and no payment of it `PENDING` |
+| No network call inside a transaction | Outbound: send first, then one transaction to store. The Checker never calls the network. |
+| Evidence is private | Every `body`, `request`, `reply` is AES-256-GCM ciphertext (`enc:v1:` + key id, for rotation) |
+| Rows stay small | A payment has a handful of messages; repeats only increase a counter; bodies are capped (64 KB) |
 | Retention | 180 days (well beyond any freshness window, so a purged message can never replay); batched delete job |
+
+`validations.status` and `payments.status` are summaries for fast checks, not business workflows:
+`CREATED → PAID` (or `FAILED` when the provider rejected the validation); a payment's status is its
+latest passed outcome.
 
 ## 8. Forwarding to the application
 
@@ -191,7 +213,7 @@ X-Aegis-Timestamp: 1730455201
 X-Aegis-Signature: v1=hex(HMAC_SHA256(app_secret, timestamp + "." + body))
 Content-Type: application/json            (or application/jose when JWE is enabled)
 
-{ "id": "payments:4711", "verdict": "PASSED",
+{ "id": "4711-1", "verdict": "PASSED",
   "provider": "razorpay", "type": "WEBHOOK", "outcome": "SUCCESS",
   "merchantRef": "SHOP-1042", "providerRef": "order_X", "paymentRef": "pay_Y",
   "amount": 49900, "currency": "INR",
@@ -201,35 +223,35 @@ Content-Type: application/json            (or application/jose when JWE is enabl
 
 - Transport: mTLS (TLS 1.3).
 - The application rejects a bad signature, or a timestamp older than 5 minutes.
-- `id` is stable across retries, so the application ignores repeats.
+- `id` = payment row id + message number: stable across retries, so the application ignores repeats.
 - Retries: exponential backoff with jitter, starting at 1 s and capped at 10 min, for 72 h. After that the message is
   `FAILED`, an alert fires, and it can be re-forwarded from Admin.
-- Per-validation order is preserved: the Forwarder sends a validation's messages one at a time, in
-  `id` order.
+- Order is preserved: the Forwarder locks a due payment row (`FOR UPDATE SKIP LOCKED`) and sends its
+  pending messages one at a time, in `n` order; `forward_due_at` is cleared when none remain.
 
 ## 9. Example: Razorpay purchase
 
-| # | Event | Row | Verdict |
+| # | Event | Rows after | Verdict |
 |---|---|---|---|
-| 1 | App → `/gw/razorpay/validations` (`POST /v1/orders` ₹499, receipt SHOP-1042) | `validations`: order_X, 49900, ok | — |
+| 1 | App → `/gw/razorpay/validations` (`POST /v1/orders` ₹499, receipt SHOP-1042) | `validations` #1: order_X, 49900, CREATED, data = request + reply | — |
 | 2 | Customer pays in Checkout (Aegis not involved) | | |
-| 3 | Browser → `/in/razorpay/callback` (payment_id, order_id, signature) | `payments` CALLBACK SUCCESS pay_Y | PASSED, forwarded, browser redirected |
-| 4 | Webhook `payment.captured` pay_Y | WEBHOOK SUCCESS | BLOCKED `DUPLICATE` (same fact as 3) |
-| 5 | Same webhook retried | — | duplicates + 1 on row 4 |
-| 6 | Late `payment.failed` for an earlier attempt | WEBHOOK FAILED | BLOCKED `DOWNGRADE` |
-| 7 | Forged webhook, wrong signature | WEBHOOK | BLOCKED `BAD_SIGNATURE`, 401 |
+| 3 | Browser → `/in/razorpay/callback` (payment_id, order_id, signature) | `payments` #4711 (pay_Y): status SUCCESS, messages [1 CALLBACK]; validation PAID | PASSED, forwarded, browser redirected |
+| 4 | Webhook `payment.captured` pay_Y | #4711 messages + [2 WEBHOOK] | BLOCKED `DUPLICATE` (same fact) |
+| 5 | Same webhook retried 3× | #4711 entry 2 `duplicates = 3` | not stored again |
+| 6 | Late `payment.failed` for earlier attempt pay_A | `payments` #4712 (pay_A): messages [1 WEBHOOK FAILED] | BLOCKED `DOWNGRADE` (validation PAID) |
+| 7 | Forged webhook, wrong signature | `payments` #4713: no validation, no payment_ref, messages [1] | BLOCKED `BAD_SIGNATURE`, 401 |
 
 ## 10. Example: BBPS bill payment (Aegis at the COU)
 
-| # | Event | Row | Verdict |
+| # | Event | Rows after | Verdict |
 |---|---|---|---|
-| 1 | COU → `/gw/bbps/validations` (bill fetch) → ₹840, ref R1 | `validations`: R1, 84000, ok | — |
-| 2 | COU → `/gw/bbps/payments` (₹840, R1) | PAY_REQUEST | PASSED, sent; `<Ack/>` stored as reply |
-| 3 | User retries; COU sends again | PAY_REQUEST | BLOCKED `DUPLICATE_PAYMENT` (in flight) |
-| 4 | NPCI → `/in/bbps` async response PENDING | ASYNC_RESPONSE PENDING | PASSED, forwarded |
-| 5 | COU → `/gw/bbps/status` after 30 s | — | BLOCKED `RATE_LIMIT` (wait ≥ 90 s) |
-| 6 | COU → `/gw/bbps/status` after 2 min → SUCCESS | STATUS_CHECK SUCCESS | PASSED, reply returned |
-| 7 | NPCI → `/in/bbps` SUCCESS | ASYNC_RESPONSE SUCCESS | PASSED, forwarded |
+| 1 | COU → `/gw/bbps/validations` (bill fetch) → ₹840, ref R1 | `validations` #2: R1, 84000, CREATED | — |
+| 2 | COU → `/gw/bbps/payments` (₹840, R1, txn T1) | `payments` #4720 (T1): PENDING, messages [1 PAY_REQUEST + `<Ack/>` reply] | PASSED, sent |
+| 3 | User retries; COU sends again (txn T2) | no new payment row; request refused | BLOCKED `DUPLICATE_PAYMENT` (T1 pending), 409 |
+| 4 | NPCI → `/in/bbps` async response PENDING (deemed) | #4720 + [2 ASYNC_RESPONSE PENDING] | PASSED, forwarded |
+| 5 | COU → `/gw/bbps/status` after 30 s | provider not called | BLOCKED `RATE_LIMIT` (wait ≥ 90 s), 429 |
+| 6 | COU → `/gw/bbps/status` after 2 min → SUCCESS | #4720 + [3 STATUS_CHECK], status SUCCESS; validation PAID | PASSED, reply returned |
+| 7 | NPCI → `/in/bbps` SUCCESS | #4720 + [4 ASYNC_RESPONSE] | BLOCKED `DUPLICATE` (same fact), still Acked |
 
 ## 11. Configuration
 
@@ -271,7 +293,7 @@ aegis:
 | T1 | Valid webhook | PASSED, forwarded once |
 | T2 | Bad / missing / empty-key signature | 401, BLOCKED `BAD_SIGNATURE` |
 | T3 | `Host: localhost` or internal IP on a forged message | still 401 |
-| T4 | Same webhook 5× | one row, `duplicates = 4`, forwarded once |
+| T4 | Same webhook 5× | one message entry, `duplicates = 4`, forwarded once |
 | T5 | Callback then webhook for the same payment | one forwarded, second `DUPLICATE` |
 | T6 | Message older than the freshness window | `REPLAY` |
 | T7 | Message for an unknown `provider_ref` | `NO_VALIDATION` |
@@ -281,7 +303,7 @@ aegis:
 | T11 | Status check before the provider's minimum delay / over the limit | `RATE_LIMIT`, provider not called |
 | T12 | Application down for 1 h | delivered after recovery, in order |
 | T13 | Kafka down at ingress | 503, provider retries, nothing lost |
-| T14 | Checker crash between DB commit and offset commit | redelivery absorbed by unique keys |
+| T14 | Checker crash between DB commit and offset commit | redelivery found in `messages`, counted as duplicate |
 | T15 | Two instances process the callback and webhook concurrently | exactly one PASSED fact |
 | T16 | Application request with a wrong client certificate or for another app's connection | 403 |
 | T17 | Secret rotation: previous secret still verifies until removed | PASSED |

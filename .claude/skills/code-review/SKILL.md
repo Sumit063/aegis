@@ -13,8 +13,8 @@ finding by reading the code; do not report guesses.
 - [ ] Every inbound message runs the full check chain on every code path; no shortcut skips the
       signature (CVE-2026-87978 class).
 - [ ] Nothing acknowledged before durable storage.
-- [ ] Duplicates and same-fact are database-enforced (unique keys / `ON CONFLICT`), not just `if` checks.
-- [ ] Checks on one validation run under its row lock (`FOR UPDATE`).
+- [ ] All checks for a payment run in one transaction holding the validation row lock (`FOR UPDATE`);
+      payment rows created with `ON CONFLICT DO NOTHING` on `(provider, payment_ref)`.
 - [ ] Aegis never calls a provider except for an application request.
 - [ ] No network call inside a `@Transactional` method (follow the call graph).
 - [ ] Retries are safe to repeat; crashes between steps cannot lose or double an effect.

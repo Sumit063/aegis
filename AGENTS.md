@@ -43,8 +43,8 @@ Code that breaks one of these is wrong even if tests pass.
    skips signature verification.
 2. **Nothing is acknowledged before it is durably stored** (provider message → Kafka before the ack).
 3. **Never forward a message that failed a check.** Blocked messages are stored and alerted on.
-4. **Duplicates and same-fact are enforced by the database** (unique keys), not by application
-   checks alone. Checks on one validation run under its row lock.
+4. **One row per validation, one row per payment** (`UNIQUE (provider, payment_ref)`). All checks
+   for a payment run in one transaction holding the validation row lock.
 5. **Aegis never calls a provider on its own** — only for an application request (D2).
 6. **No network calls inside a database transaction.**
 7. **Fail closed:** missing, empty or weak secrets stop startup; a verification error means block.
