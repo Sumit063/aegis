@@ -4,16 +4,14 @@
 
 | Environment | Profile | Branch | Where | Ports (HTTP / management) | Gateway keys |
 |---|---|---|---|---|---|
-| Local | `local` | any | Developer machine, Docker (Colima or Docker Desktop) | 8080 / 8081 | sandbox |
-| Dev | `dev` | `dev` | Ubuntu host, compose project `aegis-dev` | 8280 / 8281 | sandbox |
-| Staging | `staging` | `staging` | Ubuntu host, compose project `aegis-staging` | 8180 / 8181 | sandbox |
-| Production | `prod` | `master` | Ubuntu host, compose project `aegis-prod` | 8080 / 8081 | **live** |
+| Local / dev | `local` (laptop) · `dev` | `feature/*`, `dev` | Developer Mac, Docker via Colima | 8080 / 8081 | sandbox |
+| **Staging** | `staging` | `staging` | **Ubuntu host**, compose project `aegis-staging`, automatic deploy | 8180 / 8181 | sandbox |
+| Production | `prod` | `master` | No host yet — CI builds and publishes the image; deploy enabled when a host exists | 8080 / 8081 | **live** |
 
-Each server environment is fully isolated: its own PostgreSQL, Kafka, volumes, `.env` with its own
-secrets, and its own runtime configuration. They share only the host. All ports bind to
-`127.0.0.1`; the host is on a private Tailscale network and public webhook ingress is added
-explicitly (Funnel) per environment in M1. Moving an environment to its own host later changes
-nothing but where its runner lives.
+The staging host is isolated per environment by design (own PostgreSQL, Kafka, volumes, `.env`
+secrets, runtime configuration), so adding production later — on the same host or a new one — is
+one `deploy.sh prod <sha>` and one line in the CD workflow. All ports bind to `127.0.0.1`; the host
+is on a private Tailscale network and public webhook ingress is added explicitly (Funnel).
 
 ## 2. Branching
 
@@ -21,7 +19,7 @@ nothing but where its runner lives.
  feature/F04-domain-model ──PR──► dev ──PR──► staging ──PR──► master
         ▲  cut from master          │            │              │
         │                           ▼            ▼              ▼
-        │                       deploy dev   deploy staging  deploy prod
+        │                       CI only     deploy staging  image ready for prod
  hotfix/<slug> ──PR──► master, then merged back into staging and dev
 ```
 
@@ -47,7 +45,7 @@ branch keeps the environment branches identical in content, just at different po
     2. build          ./mvnw verify: format, compile, unit, ArchUnit, integration, coverage
     3. image (push)   ghcr.io/<owner>/aegis:<sha> and :<branch>
   CD  (self-hosted runner on the host, after CI succeeds on a push)
-    4. deploy         branch → environment; pull :<sha>; compose up; wait for readiness
+    4. deploy         staging → Ubuntu host; pull :<sha>; compose up; wait for readiness
     5. rollback       unhealthy → previous tag of that environment; job fails
 ```
 
@@ -71,9 +69,8 @@ pull-request code — and the repository is private, so forks cannot reach it.
 
 ```
 /home/aegis/
-  aegis/dev/        compose.yaml, .env (dev secrets, mode 600)
-  aegis/staging/    compose.yaml, .env (staging secrets)
-  aegis/prod/       compose.yaml, .env (production secrets)
+  aegis/staging/    compose.yaml, .env (staging secrets, mode 600)
+  aegis/prod/       (when production moves here or to its own host)
   backups/          nightly PostgreSQL dumps per environment (M1)
  container aegis-runner   GitHub Actions runner (restarts automatically)
 ```
