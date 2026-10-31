@@ -20,7 +20,7 @@ implementation needs no further design decisions.
    - Adapters: which ones implement/call them.
    - Patterns: name each pattern from ARCHITECTURE §5 you use and where. Prefer adding a class
      (provider module, `ClaimRule`, policy entry) over editing core branches.
-   - Data: Flyway migration, indexes, lock order (target → transaction), transaction boundaries.
+   - Data: Flyway migration, indexes, locking (order row), events written, transaction boundaries.
      No network calls inside a transaction.
    - Configuration and fail-closed validation.
    - Failure behaviour for every dependency (DB, Kafka, provider, backend).

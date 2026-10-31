@@ -48,8 +48,8 @@ what the provider says. Signatures prove *who sent* a message; confirmation prov
 still works when a secret is leaked or empty.
 
 ### D5 — Correctness by locking, not by ordering
-Messages can be redelivered, replayed or reordered. Every change locks the order, then the
-transaction (fixed lock order → no deadlocks) and checks the state machine. Kafka ordering is a
+Messages can be redelivered, replayed or reordered. Every change locks the order row — which holds
+its transactions (D33), so one lock covers everything — and checks the state machine. Kafka ordering is a
 performance aid, never a correctness requirement.
 
 ### D6 — The order is the unit of fulfilment
@@ -81,8 +81,9 @@ re-confirmed on a schedule even if no callback arrives — the missing-callback 
 recharges.
 
 ### D12 — "Once" is enforced by the database
-Notifications have `UNIQUE (type, subject_id)`. No race, retry or replay can create a second
-`order.paid` for an order.
+Notification IDs are deterministic (`UUIDv5(source | type | subject)`) and the outbox primary key is
+`(event_id, destination_id)`. No race, retry or replay can create a second `order.paid` for an
+order (D34).
 
 ### D13 — Two forwarding modes
 - **envelope** (default): Aegis's normalised JSON, signed by Aegis.
@@ -90,9 +91,10 @@ Notifications have `UNIQUE (type, subject_id)`. No race, retry or replay can cre
   non-contradicted webhook is forwarded once ever — including ones that were `STALE` for Aegis,
   since the legacy app may have no other route. Only `payment.failed` for a paid order is suppressed.
 
-### D14 — Dedupe table separate from claims
-If `claims` is later partitioned by month, a cross-partition unique key would need the partition
-column and would break deduplication. A separate table avoids that redesign.
+### D14 — Duplicate guard lives on the inbox
+*Superseded by D31.* Originally a separate dedupe table, to survive partitioning of the claims
+table. The simplified model keeps `inbox` unpartitioned (cleaned by a retention job), so a unique
+key on `(source_id, dedupe_key)` in the inbox itself is enough.
 
 ### D15 — Secrets: fail-closed, rotatable, least privilege
 - Missing or < 16-character secret for an enabled role → startup fails. Empty optional slots are
@@ -140,7 +142,7 @@ implementations) and provider `if` branches in the core.
 ### D23 — JPA with explicit locking
 Spring Data JPA repositories implement persistence ports; JPA entities stay in
 `adapter.out.persistence`, separate from domain objects. `@Version` on mutable entities,
-pessimistic locks for transitions (target → transaction), native SQL for `SKIP LOCKED` queue claims
+a pessimistic lock on the order row for transitions, native SQL for `SKIP LOCKED` queue claims
 and `ON CONFLICT` inserts, `open-in-view=false`, `ddl-auto=validate`, Flyway owns the schema.
 Trade-off: mapping code between entities and domain objects, accepted for a framework-free core.
 
@@ -163,9 +165,10 @@ in small Conventional Commits. AI agents follow `AGENTS.md` and the project skil
 `local`, `dev`, `staging`, `prod`. Shared settings in `application.yaml`, differences in
 `application-<profile>.yaml`. Secrets never in profile files: each environment's keys live in its
 own `.env` on its host and arrive as environment variables, with no defaults outside `local`.
-Production refuses test gateway keys; other environments refuse live keys. On the single host,
-each environment is an isolated compose project with its own database, Kafka and ports
-(prod 8080/8081, staging 8180/8181, dev 8280/8281).
+Production refuses test gateway keys; other environments refuse live keys. Local/dev runs on
+developer machines; the Ubuntu host runs **staging** (isolated compose project with its own
+database, Kafka, ports 8180/8181 and secrets); production gets a host later and needs no design
+change.
 
 ### D28 — Runtime configuration in PostgreSQL with in-memory snapshots
 Operational settings (retry schedules, rate limits, destination pause, feature flags, log levels)
@@ -182,6 +185,58 @@ from disk (no audit, per-host drift), Redis (not yet in the stack, no transactio
 then merged back into `staging` and `dev`. Each environment branch deploys to its environment
 after CI passes. Promoting whole branches (instead of merging each feature into each branch
 separately) keeps the three branches from drifting apart.
+
+### D30 — PostgreSQL as the only database
+Chosen because correctness here depends on database features, not just storage:
+
+| Need | PostgreSQL feature | Alternatives |
+|---|---|---|
+| Change an order and queue its notification **atomically** | ACID transactions, row locks | MongoDB/Cassandra: weak or no multi-row transactions |
+| Many workers sharing one queue without collisions | `FOR UPDATE SKIP LOCKED` | MySQL 8 has it; Cassandra, DynamoDB don't |
+| "Once" guaranteed by the database | unique keys + `INSERT … ON CONFLICT` | most NoSQL can't enforce across rows |
+| Fast "what's due now?" on large tables | partial indexes | MySQL has none |
+| Provider payloads and order aggregates as documents | `jsonb` (indexable) | MySQL JSON is weaker |
+| Instant config sync to every instance | `LISTEN / NOTIFY` | others need an extra system |
+| Years of history | declarative partitioning, replicas | — |
+
+MySQL is the runner-up; partial indexes and `LISTEN/NOTIFY` decided it. One database per
+environment; free, runs comfortably on one host.
+
+### D31 — Five tables: inbox, orders, outbox, events, runtime_config
+The first schema had ten tables. Each remaining table has one job no other can do:
+`inbox` (duplicate guard + confirmation queue + raw evidence), `orders` (current truth),
+`outbox` (what still has to be delivered), `events` (history), `runtime_config` (live settings).
+Merged away: the dedupe table (a unique key on `inbox`), the transactions table (inside `orders`,
+D33), the notifications table (the outbox row is the notification, D34). Replaced by `events`:
+state-transition log, delivery-attempt log, config audit log. Rejected: keeping history in
+separate per-purpose tables — three tables, three query paths, one question ("what happened?").
+
+### D32 — Event history in a PostgreSQL `events` table
+Every step appends an event **in the same transaction** as the change it describes, so the history
+is exact: never missing a step that happened, never showing one that didn't. The Admin API reads
+timelines with indexed queries; monthly partitions make retention a cheap `DROP`. Rejected for now:
+Elasticsearch/OpenSearch as the primary store — another heavy service (≈1–2 GB heap), events
+arrive asynchronously (lag or gaps after crashes), and our queries are exact lookups, not free-text
+search. **Later:** if full-text search or dashboards are needed, stream `events` into OpenSearch
+(Apache 2.0) as a read copy; the core is unchanged.
+
+### D33 — Transactions stored inside their order row
+An order has few transactions (payment attempts, refunds), and every change already locks the
+order. Storing them as a validated `jsonb` array in `orders` makes the aggregate one row: one lock,
+atomic updates, no lock ordering, no join. Lookups by payment ID go through the provider (which
+returns the order) or the indexed `events` table. Trade-off: no foreign keys inside the array —
+the domain model validates it.
+
+### D34 — Deterministic notification IDs; the outbox row is the notification
+`event_id = UUIDv5(source | type | subject)`: the same change always yields the same ID, so
+`/verify` can return it immediately, the outbox key `(event_id, destination_id)` blocks
+duplicates, and the merchant deduplicates on it. Removes the separate notifications table.
+
+### D35 — Kafka kept as the ingestion log
+Reviewed against a Postgres-only inbox (D31 discussion). Kept: Ingress stays independent of the
+database, bursts are absorbed outside it, and the same stream can feed the risk engine (M5) and
+analytics without touching the core. The Kafka → inbox handoff stays crash-safe through the inbox
+unique key (D14) and offset commit after the database commit.
 
 ## Design review log
 
@@ -206,3 +261,7 @@ Issues found while reviewing the design, before any code:
 | R15 | No backup or restore plan for PostgreSQL | Nightly dump, 14-day retention, monthly restore test |
 | R16 | Disputes/chargebacks undefined | Recorded and alerted, not interpreted; future adapter work |
 | R17 | Exploit Lab depended on vulnerable versions still being downloadable | Reference merchant + mock gateway (D20) |
+| R18 | Ten tables for five concerns; history split across three logs | Five tables (D31), one events table (D32) |
+| R19 | Two-row locking (target → transaction) invited ordering bugs | Transactions inside the order row (D33) |
+| R20 | Notification + delivery split needed a lookup to answer `/verify` | Deterministic IDs, outbox row is the notification (D34) |
+| R21 | Passthrough replays could repeat once outbox history was purged | Outbox kept longer (180 d) than inbox (90 d) |

@@ -1,15 +1,17 @@
 # Aegis — Low-Level Design
 
 Scope: M1 (Razorpay). Later milestones add adapters and consumers without changing this core.
-Vocabulary: inbound messages are **claims**; outbound events are **notifications**.
+Vocabulary: inbound messages are **claims** (stored in `inbox`); messages to the merchant are
+**notifications** (stored in `outbox`); everything that happened is an **event** (stored in `events`).
 
 ## 1. Components
 
 ```
 Webhook ─► Ingress ─► Kafka ─► ClaimConsumer ─┐
-                                              ├─► claims(CONFIRMING) ─► ConfirmWorker ─► transition ─► notifications ─► deliveries ─► DeliveryWorker ─► Backend
-Backend ─► VerifyController ── inline ────────┘                              ▲
+                                              ├─► inbox (CONFIRMING) ─► ConfirmWorker ─► orders ─► outbox ─► DeliveryWorker ─► Backend
+Backend ─► VerifyController ── inline ────────┘                              ▲   (state)  (to send)
                                      RecheckWorker ── RECHECK claims ────────┘
+                     every step above also appends to ─► events (history, same DB transaction)
 ```
 
 | Component | Role | Secrets | Touches |
@@ -30,11 +32,14 @@ retries.
 
 | Entity | One row per | Key states |
 |---|---|---|
-| **Order** (payment target) | provider order (`order_…`), or (M2) dynamic QR code (`qr_…`) | `OPEN` → `PAID` |
-| **Transaction** | provider payment, refund, or (M3) fulfilment | per kind, below |
-| **Claim** | inbound message (webhook, verify call, recheck) | `CONFIRMING → ACCEPTED \| STALE \| REJECTED \| IGNORED \| HELD` |
-| **Notification** | real state change worth telling the backend | — (immutable, stable ID) |
-| **Delivery** | notification × destination | `PENDING → SUCCEEDED \| RETRYING → DEAD` |
+| **Order** (payment target) — table `orders` | provider order (`order_…`), or (M2) dynamic QR code (`qr_…`) | `OPEN` → `PAID` |
+| **Transaction** — inside its order (`orders.transactions`) | provider payment, refund, or (M3) fulfilment | per kind, below |
+| **Claim** — table `inbox` | inbound message (webhook, verify call, recheck) | `CONFIRMING → ACCEPTED \| STALE \| REJECTED \| IGNORED \| HELD` |
+| **Notification** — table `outbox`, one row per destination | real state change worth telling the backend | `PENDING → SUCCEEDED \| RETRYING → DEAD` |
+| **Event** — table `events` | anything that happened (append-only) | — |
+
+An order and its transactions form **one aggregate stored in one row**: every change locks just
+that row, so there is no lock ordering to get wrong and no partial update.
 
 **Rule: claims trigger, the provider decides.** A claim never sets state directly. It causes Aegis
 to fetch the provider's truth; the claim is then checked against that truth (to detect forgeries),
@@ -85,8 +90,10 @@ and target membership are checked.
 | `refund.processed` / `refund.failed` | refund → `PROCESSED` / `FAILED` | refund |
 | `fulfilment.succeeded` / `.failed` / `.late_success` / `.reversed` (M3) | fulfilment transitions | fulfilment |
 
-`UNIQUE (type, subject_id)` in the database makes "one `order.paid` per order" impossible to break,
-even under races between routes.
+A notification's ID is **deterministic**: `UUIDv5(sourceId | type | subjectId)`. The same change always
+produces the same ID, and the outbox primary key `(event_id, destination_id)` makes a second copy
+impossible — "one `order.paid` per order" holds even under races between routes. `/verify` can
+return the ID without reading it back.
 
 ## 3. Route B — Ingress
 
@@ -108,15 +115,17 @@ Topics: `aegis.claims` (12 partitions, 7 d) and `aegis.claims.dlq` (unparseable;
 
 ## 4. ClaimConsumer
 
-One transaction per message:
+One database transaction per Kafka message:
 
 ```sql
-INSERT INTO claim_dedupe (source_id, dedupe_key, claim_id) VALUES (...) ON CONFLICT DO NOTHING;
--- conflict → UPDATE claim_dedupe SET duplicate_count = duplicate_count + 1, last_seen_at = now()
--- new      → INSERT INTO claims (..., origin = 'WEBHOOK', status = 'CONFIRMING', next_attempt_at = now())
+INSERT INTO inbox (..., origin = 'WEBHOOK', status = 'CONFIRMING', next_attempt_at = now())
+ON CONFLICT (source_id, dedupe_key) DO UPDATE SET duplicates = inbox.duplicates + 1
+RETURNING (xmax = 0) AS inserted;          -- true: new claim, false: duplicate
+INSERT INTO events (type = 'claim.received' | 'claim.duplicate', ...);
 ```
 
-Commit, **then** commit the Kafka offset. A replay after a crash hits the dedupe row and does nothing.
+Commit, **then** commit the Kafka offset. A replay after a crash hits the unique key and only
+increments `duplicates`.
 
 ## 5. Confirmation (shared by ConfirmWorker, VerifyController, RecheckWorker)
 
@@ -137,17 +146,17 @@ Commit, **then** commit the Kafka offset. A replay after a crash hits the dedupe
 | Refund: belongs to the payment, and total refunded ≤ payment amount | `REJECTED (refund_mismatch)` |
 
 3. **Transition** in one database transaction:
-   `SELECT … FROM orders WHERE … FOR UPDATE` (create if absent), then the transaction row
-   `FOR UPDATE`; move the transaction to the **provider's** state if the move is allowed; derive the
-   order state; insert notifications (`ON CONFLICT (type, subject_id) DO NOTHING`); insert a
-   delivery per subscribed destination; record transitions; set claim status
-   (`ACCEPTED` if anything changed, else `STALE`).
+   `SELECT … FROM orders WHERE … FOR UPDATE` (insert if absent); move the transaction inside
+   `orders.transactions` to the **provider's** state if the move is allowed; derive the order state;
+   insert one `outbox` row per subscribed destination (`ON CONFLICT (event_id, destination_id) DO
+   NOTHING`); append `events` for every change; set the inbox claim status (`ACCEPTED` if anything
+   changed, else `STALE`).
 4. Schedule a recheck if the transaction is left non-final (§7).
 
-Provider error or timeout (3 s) → `confirm_attempts += 1`, retry at 5 s, 15 s, 1 m, 5 m, 15 m, then
+Provider error or timeout (3 s) → `attempts += 1`, retry at 5 s, 15 s, 1 m, 5 m, 15 m, then
 every 30 m; after 24 h → `HELD` + alert.
 
-Lock order is always **order, then transaction**, which rules out deadlocks.
+Only one row is ever locked per transition (the order), which rules out deadlocks.
 
 ## 6. Route A — Verify API
 
@@ -185,8 +194,9 @@ Lock order is always **order, then transaction**, which rules out deadlocks.
 
 ## 7. RecheckWorker
 
-Every 30 s, claims transactions with `next_check_at <= now()` (lease pattern) and inserts a claim
-with `origin = 'RECHECK'`; the ConfirmWorker handles it like any other claim.
+Every 30 s, picks orders with `next_check_at <= now()` (the earliest re-check among their unfinished
+transactions; lease pattern) and inserts an inbox claim with `origin = 'RECHECK'`; the
+ConfirmWorker handles it like any other claim.
 
 | Non-final state | Recheck schedule | Deadline → alert |
 |---|---|---|
@@ -196,18 +206,19 @@ with `origin = 'RECHECK'`; the ConfirmWorker handles it like any other claim.
 
 ## 8. DeliveryWorker
 
-Claims due deliveries with the lease pattern plus **per-order FIFO**:
+Claims due outbox rows with the lease pattern plus **per-order FIFO**:
 
 ```sql
-... WHERE d.status IN ('PENDING','RETRYING') AND d.next_attempt_at <= now()
-  AND NOT EXISTS (SELECT 1 FROM deliveries e
-                  WHERE e.order_key = d.order_key AND e.destination_id = d.destination_id
+... FROM outbox d WHERE d.status IN ('PENDING','RETRYING') AND d.next_attempt_at <= now()
+  AND NOT EXISTS (SELECT 1 FROM outbox e
+                  WHERE e.order_id = d.order_id AND e.destination_id = d.destination_id
                     AND e.seq < d.seq AND e.status IN ('PENDING','RETRYING'))
 ```
 
 - `2xx` → `SUCCEEDED`. `410` → `DEAD`. Other status or timeout (10 s) → `RETRYING`.
 - Backoff `min(10 s × 2^attempt, 1 h)` ± 20 % jitter; 20 attempts (~24 h) → `DEAD` + alert.
-- Each attempt is written to `delivery_attempts`, and gets a fresh timestamp and signature.
+- Each attempt gets a fresh timestamp and signature, and is recorded as a `delivery.attempted`
+  event (status, duration, error) in the same transaction that updates the outbox row.
 
 ### Request
 
@@ -237,60 +248,138 @@ the claim, so the backend can map the payment to its own order safely.
 confirmed and not contradicted is forwarded **once**, with its original body and headers plus the
 `Aegis-*` headers — including webhooks that were `STALE` for Aegis, because the legacy app may not
 have heard through any other route. Only harmful ones are suppressed: `payment.failed` for an
-order that is already `PAID`. Each forward is recorded as a `passthrough.forward` notification with
-the provider event ID as its subject, so `UNIQUE (type, subject_id)` guarantees it is forwarded at
-most once ever — a replay after dedupe expiry is not forwarded again.
+order that is already `PAID`. Each forward is an outbox row of type `passthrough.forward` whose
+subject is the provider event ID, so its deterministic ID guarantees it is forwarded once — and
+because outbox rows are kept longer than inbox rows (§9), a replay after inbox expiry is still not
+forwarded again.
 
 ## 9. Database (PostgreSQL)
 
+Five tables, each with one job. Why PostgreSQL: DECISIONS D30. Why these five: D31.
+
+| Table | Job | Written by | Read by | Kept |
+|---|---|---|---|---|
+| `inbox` | Every claim to check: duplicate guard + confirmation work queue + raw evidence | ClaimConsumer, Verify, Recheck | ConfirmWorker | 90 days after final |
+| `orders` | Current truth: each order with its payments/refunds inside | Confirmation | Verify, Recheck, Admin | forever (small) |
+| `outbox` | What the merchant must be told, per destination, until delivered | Confirmation | DeliveryWorker | 180 days after final |
+| `events` | Everything that happened, append-only, for timelines and audit | every step, same transaction | Admin API | 12 months (monthly partitions) |
+| `runtime_config` | Settings editable without a deploy | Admin API | every instance (in-memory) | forever |
+
 ```sql
-claim_dedupe    (source_id, dedupe_key) PK, claim_id, first_seen_at, last_seen_at, duplicate_count
+-- inbox: one row per claim (webhook, /verify call, recheck). Duplicate guard + work queue.
+CREATE TABLE inbox (
+  id                 uuid        PRIMARY KEY,                -- UUIDv7
+  source_id          text        NOT NULL,                   -- 'razorpay-main'
+  dedupe_key         text        NOT NULL,                   -- provider event ID | 'checkout:<pay_id>' | 'recheck:<order>:<n>'
+  origin             text        NOT NULL CHECK (origin IN ('WEBHOOK','VERIFY','RECHECK')),
+  claim_type         text        NOT NULL,                   -- 'payment.captured', …
+  provider_order_id  text,
+  provider_txn_id    text,
+  raw_body           bytea,                                  -- exact bytes: re-verification, passthrough, evidence
+  headers            jsonb,                                  -- only the provider headers that matter
+  status             text        NOT NULL CHECK (status IN ('CONFIRMING','ACCEPTED','STALE','REJECTED','IGNORED','HELD')),
+  status_reason      text,                                   -- 'order_mismatch', 'not_found', …
+  attempts           int         NOT NULL DEFAULT 0,
+  next_attempt_at    timestamptz,
+  locked_until       timestamptz,                            -- worker lease
+  duplicates         int         NOT NULL DEFAULT 0,         -- how often the provider re-sent it
+  received_at        timestamptz NOT NULL,
+  updated_at         timestamptz NOT NULL,
+  UNIQUE (source_id, dedupe_key)
+);
+CREATE INDEX inbox_due ON inbox (next_attempt_at) WHERE status = 'CONFIRMING';
 
-claims          id uuid PK, source_id, origin (WEBHOOK|VERIFY|RECHECK), dedupe_key, claim_type,
-                provider_txn_id, provider_order_id, received_at, raw_body bytea, headers jsonb,
-                status, status_reason, provider_snapshot jsonb,
-                confirm_attempts, next_attempt_at, locked_until, updated_at
-                idx (next_attempt_at) WHERE status = 'CONFIRMING'
-                idx (source_id, provider_order_id), (received_at)
+-- orders: one row per payment target, with its transactions inside (one aggregate, one lock).
+CREATE TABLE orders (
+  id                 uuid        PRIMARY KEY,
+  source_id          text        NOT NULL,
+  kind               text        NOT NULL CHECK (kind IN ('ORDER','QR_CODE','RECHARGE')),
+  usage              text        NOT NULL CHECK (usage IN ('SINGLE','MULTIPLE')),
+  provider_order_id  text        NOT NULL,                   -- order_… | qr_… | recharge request ID
+  merchant_order_ref text,                                   -- merchant's receipt, read from the provider API
+  amount_minor       bigint      CHECK (amount_minor >= 0),  -- paise; NULL = variable-amount QR
+  currency           char(3)     NOT NULL,
+  state              text        NOT NULL CHECK (state IN ('OPEN','PAID','CLOSED')),
+  transactions       jsonb       NOT NULL DEFAULT '[]',      -- payments, refunds, fulfilments (shape below)
+  next_check_at      timestamptz,                            -- earliest re-check among unfinished transactions
+  version            int         NOT NULL,                   -- optimistic locking
+  created_at         timestamptz NOT NULL,
+  updated_at         timestamptz NOT NULL,
+  UNIQUE (source_id, kind, provider_order_id)
+);
+CREATE INDEX orders_recheck_due ON orders (next_check_at) WHERE next_check_at IS NOT NULL;
 
-orders          id uuid PK, source_id, kind (ORDER|QR_CODE), usage (SINGLE|MULTIPLE),
-                provider_order_id, merchant_order_ref,
-                amount_minor bigint NULL (NULL = variable-amount QR), currency char(3),
-                state (OPEN|PAID|CLOSED),
-                paid_by_txn_id, version int, created_at, updated_at
-                UNIQUE (source_id, kind, provider_order_id)
+-- outbox: one row per notification per destination. Delivery queue + "exactly once" guard.
+CREATE TABLE outbox (
+  event_id           uuid        NOT NULL,                   -- Aegis-Event-Id = UUIDv5(source|type|subject)
+  destination_id     text        NOT NULL,                   -- 'orders-backend'
+  type               text        NOT NULL,                   -- 'order.paid', 'order.overpaid', 'passthrough.forward', …
+  order_id           uuid        NOT NULL REFERENCES orders(id),
+  payload            jsonb       NOT NULL,                   -- envelope, or {headers, bodyBase64} for passthrough
+  seq                bigint      GENERATED ALWAYS AS IDENTITY, -- delivery order within an order
+  status             text        NOT NULL CHECK (status IN ('PENDING','RETRYING','SUCCEEDED','DEAD')),
+  attempts           int         NOT NULL DEFAULT 0,
+  next_attempt_at    timestamptz NOT NULL,
+  locked_until       timestamptz,
+  last_http_status   int,
+  last_error         text,
+  created_at         timestamptz NOT NULL,
+  updated_at         timestamptz NOT NULL,
+  PRIMARY KEY (event_id, destination_id)
+);
+CREATE INDEX outbox_due   ON outbox (next_attempt_at) WHERE status IN ('PENDING','RETRYING');
+CREATE INDEX outbox_order ON outbox (order_id, destination_id, seq);
 
-transactions    id uuid PK, source_id, kind (PAYMENT|REFUND|FULFILMENT), provider_txn_id,
-                order_id, parent_txn_id, amount_minor bigint, refunded_minor bigint,
-                currency char(3), state, method, version int,
-                next_check_at, check_attempts, check_deadline, locked_until,
-                created_at, updated_at
-                UNIQUE (source_id, kind, provider_txn_id)
-                idx (next_check_at) WHERE next_check_at IS NOT NULL
+-- events: append-only history. Written in the same transaction as the change it describes.
+CREATE TABLE events (
+  id                 bigint      GENERATED ALWAYS AS IDENTITY,
+  occurred_at        timestamptz NOT NULL,
+  type               text        NOT NULL,                   -- see event types below
+  source_id          text,
+  provider_order_id  text,
+  provider_txn_id    text,
+  inbox_id           uuid,
+  actor              text        NOT NULL,                   -- 'system' | 'admin:<name>' | 'verify'
+  data               jsonb       NOT NULL,                   -- details: provider answer, from/to state, HTTP status, old/new config
+  PRIMARY KEY (id, occurred_at)
+) PARTITION BY RANGE (occurred_at);                          -- one partition per month
+CREATE INDEX events_by_order ON events (source_id, provider_order_id, occurred_at);
+CREATE INDEX events_by_txn   ON events (provider_txn_id, occurred_at);
+CREATE INDEX events_by_type  ON events (type, occurred_at);
 
-transitions     id bigserial PK, entity (ORDER|TXN), entity_id, from_state, to_state, claim_id, at
-
-notifications   id uuid PK, type, subject_id, order_id, txn_id, payload jsonb, created_at
-                UNIQUE (type, subject_id)
-
-deliveries      id uuid PK, seq bigserial UNIQUE, notification_id, order_key, destination_id,
-                status, attempt_count, next_attempt_at, locked_until,
-                last_http_status, last_error, created_at, updated_at
-                UNIQUE (notification_id, destination_id)
-                idx (next_attempt_at) WHERE status IN ('PENDING','RETRYING')
-                idx (order_key, destination_id, seq)
-
-delivery_attempts  id bigserial PK, delivery_id, attempt_no, started_at, duration_ms,
-                   http_status, error
-
-runtime_config        key text PK, value jsonb, version int, updated_by, updated_at
-runtime_config_audit  id bigserial PK, key, old_value jsonb, new_value jsonb, version int,
-                      changed_by, changed_at, reason
+-- runtime_config: settings editable through the Admin API (LLD 11.2). History lives in events.
+CREATE TABLE runtime_config (
+  key                text        PRIMARY KEY,                -- 'delivery.backoff', 'destination.orders-backend.paused'
+  value              jsonb       NOT NULL,
+  version            int         NOT NULL,
+  updated_by         text        NOT NULL,
+  updated_at         timestamptz NOT NULL
+);
 ```
 
-Amounts are `bigint` minor units. IDs are UUIDv7. Timestamps are `timestamptz` (UTC).
-Retention (M2): raw bodies 90 d; `claim_dedupe` 30 d (far beyond any provider retry window — an
-older replay still meets the state machine and is `STALE`).
+**`orders.transactions` element** (validated by the domain model, mapped by JPA as JSON):
+
+```json
+{ "kind": "PAYMENT", "id": "pay_Q7x…", "parentId": null, "state": "CAPTURED",
+  "amountMinor": 49900, "refundedMinor": 0, "currency": "INR", "method": "upi",
+  "nextCheckAt": null, "checks": 0, "updatedAt": "…Z" }
+```
+
+**Event types:** `claim.received`, `claim.duplicate`, `claim.accepted`, `claim.stale`,
+`claim.rejected`, `claim.ignored`, `claim.held`, `verify.answered`, `order.created`,
+`order.state_changed`, `transaction.state_changed`, `notification.created`, `delivery.attempted`,
+`delivery.succeeded`, `delivery.dead`, `recheck.scheduled`, `config.changed`, `admin.action`.
+Rejected webhooks (bad signature) are **not** stored — they would let anyone fill the disk; they
+are counted in metrics instead.
+
+**Retention** (daily job): inbox rows 90 days after reaching a final status (long past any provider
+retry window; an older replay still meets the state machine and is `STALE`); outbox rows 180 days
+after `SUCCEEDED`/`DEAD` (longer than inbox, so passthrough replays stay blocked); events by
+dropping monthly partitions older than 12 months.
+
+Amounts are `bigint` minor units. IDs are UUIDv7 except deterministic outbox IDs. Timestamps are
+`timestamptz` (UTC). Database roles: the application user owns these tables; Admin reads through
+a read-only role.
 
 ## 10. Provider adapter
 
@@ -353,9 +442,9 @@ is role-aware: an Ingress-only container receives only webhook secrets.
 | Profile | Environment | Branch | Gateway keys | Defaults allowed |
 |---|---|---|---|---|
 | `local` | Developer machine | any | sandbox | Yes — local containers only |
-| `dev` | Shared development | `dev` | sandbox | No |
-| `staging` | Pre-production | `staging` | sandbox | No |
-| `prod` | Production | `master` | **live** | No |
+| `dev` | Development on developer machines | `dev` | sandbox | No |
+| `staging` | Pre-production on the Ubuntu host | `staging` | sandbox | No |
+| `prod` | Production (host to be added) | `master` | **live** | No |
 
 - `application.yaml` holds shared settings; `application-<profile>.yaml` holds what differs.
   Selected with `SPRING_PROFILES_ACTIVE`; a laptop with none set runs `local`.
@@ -391,7 +480,7 @@ secret or point deliveries at an attacker.
 ```
  Admin API ──PUT /admin/config/{key} (expected version)──► validate ► DB transaction:
                                                              runtime_config (version + 1)
-                                                             runtime_config_audit (old → new, who)
+                                                             events: config.changed (old → new, who)
                                                              NOTIFY aegis_config
  every instance:  LISTEN aegis_config ──► reload changed keys ──► swap immutable snapshot
                   + poll every 30 s (missed notifications)  ──► same
@@ -405,7 +494,8 @@ secret or point deliveries at an attacker.
 - **Observer:** components that need to react (e.g. the delivery worker's concurrency) subscribe
   to key changes.
 - **Optimistic concurrency:** edits carry the expected version; a stale edit is rejected (`409`).
-- **Audit and rollback:** every change is recorded; `POST /admin/config/{key}/rollback?version=n`.
+- **Audit and rollback:** every change is a `config.changed` event (old value, new value, who, why);
+  `POST /admin/config/{key}/rollback?version=n` restores a value from that history.
 - **Failure:** if the database is unreachable, instances keep their last snapshot; on a fresh start
   with no database, the service does not start anyway (it needs the database).
 - **Per environment:** each environment has its own database, so its own runtime configuration.
@@ -414,10 +504,10 @@ secret or point deliveries at an attacker.
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /admin/orders/{sourceId}/{providerOrderId}` | Timeline: claims, transitions, notifications, deliveries |
+| `GET /admin/orders/{sourceId}/{providerOrderId}` | Timeline from `events`: claims, provider answers, state changes, notifications, delivery attempts |
 | `GET /admin/claims?status=&since=` | Find rejected / held claims |
 | `POST /admin/claims/{id}/reconfirm` | `HELD` → `CONFIRMING` |
-| `POST /admin/deliveries/{id}/retry` | `DEAD` → `PENDING` |
+| `POST /admin/outbox/{eventId}/{destinationId}/retry` | `DEAD` → `PENDING` |
 | `GET /admin/config` | All runtime keys: value, default, version, description |
 | `PUT /admin/config/{key}` | Change a runtime key (body: value + expected version) |
 | `GET /admin/config/{key}/history` | Audit trail |
@@ -451,7 +541,7 @@ aegis-service/src/main/java/dev/aegis/
   application/     port/in (use cases), port/out (repositories, claim log, outbox), service/
   provider/        spi/ (capabilities, registry, signature schemes), razorpay/, …
   adapter/in/      web/ (Ingress, Verify, Admin controllers), kafka/ (ClaimConsumer), scheduler/ (workers)
-  adapter/out/     persistence/ (JPA), kafka/ (claim log), http/ (deliveries)
+  adapter/out/     persistence/ (JPA), kafka/ (claim log), http/ (outbound deliveries)
   config/          properties, roles, fail-closed validation
 aegis-service/src/main/resources/db/migration/   Flyway SQL
 deploy/            compose.yaml, deploy.sh, runner/

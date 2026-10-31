@@ -61,7 +61,7 @@ machine, so new flows plug in as adapters without changing the core.
  backend ◄── verdict + order.paid ID ─┘    │
     ▲                                      ▼
     │                                  PostgreSQL ◄──── Admin API (tailnet only)
-    │                         orders · transactions · events · deliveries
+    │                         inbox · orders · outbox · events
     │                                      │
     └────── signed POST, retries ───── Deliverer
 ```

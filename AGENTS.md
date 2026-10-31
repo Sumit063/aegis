@@ -41,9 +41,10 @@ Code that breaks one of these is wrong even if tests pass.
    the provider's confirmed truth (D4).
 2. **Nothing is acknowledged before it is durably stored** (webhook → Kafka before `200`).
 3. **Never forward or report success for an unconfirmed claim** in strict mode.
-4. **Once is enforced by the database** (`claim_dedupe`, `UNIQUE (type, subject_id)`), not by
+4. **Once is enforced by the database** (inbox unique key, deterministic outbox IDs), not by
    application checks alone.
-5. **Lock order is target, then transaction.** Never the reverse.
+5. **Change an order only while holding its row lock**; its transactions live inside it.
+   Every change also appends to `events` in the same database transaction.
 6. **No network calls inside a database transaction.**
 7. **Fail closed:** missing/weak secrets stop startup; uncertainty means hold, not forward.
 8. **Aegis never moves money** and never handles raw card data.

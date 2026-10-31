@@ -5,7 +5,7 @@ description: Review Aegis code changes for correctness, payment-safety invariant
 
 # Code review
 
-Review the diff (`git diff`, `git diff main...HEAD`, or the PR) against the design note and this
+Review the diff (`git diff`, `git diff master...HEAD`, or the PR) against the design note and this
 checklist. Report findings ranked by severity with file:line and a concrete fix. Verify each
 finding by reading the code; do not report guesses.
 
@@ -13,7 +13,7 @@ finding by reading the code; do not report guesses.
 - [ ] State changes only after provider confirmation (strict mode); claims never set state directly.
 - [ ] Nothing acknowledged before durable storage.
 - [ ] Idempotency is database-enforced (unique constraints / `ON CONFLICT`), not just `if` checks.
-- [ ] Lock order target → transaction; no possible deadlock.
+- [ ] Order row locked for every change to it; events appended in the same transaction.
 - [ ] No network call inside a `@Transactional` method (follow the call graph).
 - [ ] Retries are safe to repeat; crashes between steps cannot lose or double an effect.
 - [ ] Amounts are `long` minor units + currency; no floating point.

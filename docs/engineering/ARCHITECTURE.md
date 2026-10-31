@@ -48,7 +48,7 @@ aegis-service/src/main/java/dev/aegis/
     event/                domain events
   application/
     port/in/              use-case interfaces (ReceiveWebhookUseCase, VerifyCheckoutUseCase, …)
-    port/out/             ClaimLogPort, TargetRepository, TransactionRepository, NotificationOutboxPort, ClockPort, …
+    port/out/             ClaimLogPort, InboxRepository, OrderRepository, OutboxRepository, EventLogPort, RuntimeConfigPort, ClockPort, …
     service/              use-case implementations (transaction boundaries live here)
   provider/
     spi/                  capability interfaces, ProviderModule, ProviderRegistry, SignatureScheme
@@ -97,11 +97,11 @@ aegis-service/src/main/java/dev/aegis/
 | **Strategy** | `SignatureScheme` (HMAC-hex, HMAC-base64+timestamp, RSA/XML-DSig, OAuth 1.0a body hash), `BackoffPolicy`, `ForwardingMode` (envelope/passthrough), `VerificationMode` (strict/verify-only) | Swap algorithms per provider/destination by configuration |
 | **Table-driven state machine** | `TransitionTable` per `TxnKind`, `PaymentTarget` rules | Allowed moves are data, reviewable at a glance, exhaustively testable |
 | **Chain of Responsibility** | `ClaimRule` chain in confirmation (exists → target match → amount match → not contradicted → not behind) | Each check isolated; new checks slot in |
-| **Aggregate + Repository (DDD)** | `PaymentTarget` owns its `Transaction`s; repositories are ports | One consistency boundary, one lock order (target → transaction) |
+| **Aggregate + Repository (DDD)** | `PaymentTarget` owns its `Transaction`s and is stored as one row; repositories are ports | One consistency boundary, one lock |
 | **Value Object** | `Money`, `SourceId`, `ProviderRef` as Java records | Validation at construction; no primitive obsession |
 | **Domain events + Observer** | Transitions raise events; `NotificationPolicy` maps events → notifications | State logic doesn't know who is told |
-| **Transactional Outbox** | Notifications + deliveries written in the same DB transaction as the state change; Deliverer relays | No lost or phantom notifications |
-| **Idempotent Consumer** | `claim_dedupe`, `UNIQUE (type, subject_id)` | At-least-once input, once-only effects |
+| **Transactional Outbox** | Outbox rows (and events) written in the same DB transaction as the state change; Deliverer relays | No lost or phantom notifications |
+| **Idempotent Consumer** | Inbox unique key; deterministic outbox IDs (`UUIDv5`) | At-least-once input, once-only effects |
 | **Competing Consumers + Lease** | Workers claim rows with `SKIP LOCKED` + `locked_until` | Horizontal scaling without coordination; crash recovery |
 | **Retry with backoff + jitter, Circuit Breaker, Bulkhead** | Provider calls and deliveries (Resilience4j) | Survive slow or failing dependencies without overload |
 | **Decorator** | Metrics/tracing around ports (Micrometer observations) | Cross-cutting concerns outside business code |
@@ -141,8 +141,10 @@ Adding a provider: create `provider/<name>/`, implement the capabilities it has,
 - **Spring Data JPA** repositories implement the persistence ports. JPA entities live only in
   `adapter.out.persistence` and are mapped to and from domain objects.
 - **Schema is owned by Flyway**; Hibernate runs with `ddl-auto=validate`.
-- **Optimistic locking** (`@Version`) on every mutable entity; **pessimistic locks**
-  (`@Lock(PESSIMISTIC_WRITE)`) for target → transaction transitions, always in that order.
+- **Optimistic locking** (`@Version`) on every mutable entity; a **pessimistic lock**
+  (`@Lock(PESSIMISTIC_WRITE)`) on the order row for every transition. Transactions are a JSON
+  array inside the order entity (`@JdbcTypeCode(SqlTypes.JSON)`), mapped to domain records.
+- **Events** are appended through `EventLogPort` in the same transaction as each change.
 - **Queue claiming** (`FOR UPDATE SKIP LOCKED`) and **insert-if-absent** (`ON CONFLICT DO NOTHING`)
   use explicit native queries — the two places JPA abstractions would hide essential behaviour.
 - `open-in-view=false`; no lazy loading across layers; fetch what a use case needs explicitly.
