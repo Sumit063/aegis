@@ -47,9 +47,36 @@ branch keeps the environment branches identical in content, just at different po
   CD  (self-hosted runner on the host, after CI succeeds on a push)
     4. deploy         staging → Ubuntu host; pull :<sha>; compose up; wait for readiness
     5. rollback       unhealthy → previous tag of that environment; job fails
+    6. check          deploy/check.sh; report on the run's summary page; job fails on any ✗
 ```
 
 Manual deploys and rollbacks: run the CD workflow by hand with an environment and a SHA.
+
+### Validating after a merge
+
+| After merging into | Wait for | Then run | Passes when |
+|---|---|---|---|
+| a feature PR | the PR's CI checks | — | build and test green |
+| `dev` | CI on `dev` | `scripts/check.sh` (with the service running locally) | your machine runs the merged code |
+| `staging` | CD (a few minutes after CI) | `scripts/check.sh staging` | the server runs exactly the tip of `origin/staging` |
+
+`scripts/check.sh` prints one line per check and exits non-zero on any failure:
+
+```
+Aegis · staging
+  ✓ postgres: running healthy        containers up, health checks passing
+  ✓ kafka: running healthy
+  ✓ aegis: running
+  ✓ alive                            the process responds
+  ✓ ready (database reachable)       it can serve traffic
+  ✓ profile: staging                 started with the right environment's settings
+  ✓ version: 4eb09ee… (expected)     the image built from the merged commit
+  ✓ roles: ingress,checker,…         which parts of Aegis run in this process
+✓ staging is healthy
+```
+
+A `version … expected …` failure right after a merge usually means CD is still running; the
+first line of the output links the last CD run. The same report is on that run's summary page.
 
 ## 4. Why this shape
 
