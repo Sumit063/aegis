@@ -27,7 +27,7 @@ Built in this order; each row is one branch and one PR.
 | F02 | Lab: reference shop with flaw switches F1–F10 | M0 | F01 | done |
 | F03 | Lab: attack scripts, `lab/run.sh`, results, CI job | M0 | F02 | done |
 | F06 | Configuration: connections, applications, secrets, fail-closed validation | M1 | F00 | done |
-| F07 | Provider SPI, registry, contract test suite | M1 | F04, F06 | planned |
+| F07 | Provider SPI, registry, contract test suite | M1 | F04, F06 | done |
 | F08 | Razorpay adapter | M1 | F07 | planned |
 | F05 | Persistence: Flyway schema, entities, repositories, evidence encryption | M1 | F04, F06 | planned |
 | F09 | Ingress: signature, Kafka, acknowledgement | M1 | F05, F08 | planned |

@@ -111,19 +111,31 @@ ID inside, a genuine payment's row.
 ## 6. Provider adapter (SPI)
 
 ```java
-interface ProviderAdapter {
-  String id();                                                  // "razorpay"
-  boolean verify(RawMessage message, SecretSet secrets);        // HMAC, checksum, XML-DSig, …
-  RawMessage decrypt(RawMessage message, SecretSet secrets);    // identity if not encrypted
-  ParsedMessage parse(RawMessage message);                      // ids, refs, outcome, amount, sent time
-  AckResponse ack(ParsedMessage message);                       // 2xx or <Ack/>
-  ParsedRequest parseRequest(OutboundCall call);                // merchant_ref, amount, kind
-  PreparedCall prepare(OutboundCall call, SecretSet secrets);   // auth headers, signing, encryption
-  ParsedMessage parseReply(OutboundCall call, RawMessage reply);
-  EnquiryLimits enquiryLimits();                                // e.g. NPCI: wait 90 s, max 3 in 2 h
-  Duration freshness();                                         // replay window
+interface ProviderAdapter {                       // package dev.aegis.provider.spi
+  String id();                                    // "razorpay"
+  Set<String> requiredSecrets();                  // checked at startup, e.g. [key-secret, webhook]
+  Set<String> requiredSettings();                 // default none, e.g. [key-id]
+  void validate(Connection c, boolean production);// default no-op, e.g. live keys only in prod
+  Duration freshness();                           // replay window
+  Check.Limits enquiryLimits();                   // default none; NPCI: wait 90 s, max 3 in 2 h
+  // inbound
+  RawMessage decrypt(Channel ch, RawMessage m, Connection c);   // default identity
+  boolean verify(Channel ch, RawMessage m, Connection c);       // HMAC, checksum, XML-DSig, …
+  PaymentMessage parse(Channel ch, RawMessage m, Connection c, Instant receivedAt);
+                                                  // throws UnparseableMessageException
+  Ack ack(Channel ch, RawMessage m);              // default 200; or <Ack/>
+  // outbound, only for an application's request
+  boolean supports(CallKind kind);                // default false; VALIDATION, PAY_REQUEST, STATUS_CHECK
+  CallFacts facts(CallKind k, RawMessage request);              // merchant ref, refs, amount
+  PreparedCall prepare(CallKind k, RawMessage request, Connection c);   // auth, signing, encryption
+  Reply reply(CallKind k, RawMessage request, int status, RawMessage reply, Connection c, Instant at);
 }
 ```
+
+`Channel` is `SERVER` (webhooks, async responses) or `BROWSER` (Checkout callbacks). `RawMessage`
+holds the exact bytes and headers (case-insensitive lookup). Adapters are found with
+`java.util.ServiceLoader` (`META-INF/services/dev.aegis.provider.spi.ProviderAdapter`) and
+`ProviderRegistry` refuses to start if a connection names a missing adapter, secret or setting.
 
 | Provider | verify | ack | Outcome mapping |
 |---|---|---|---|
