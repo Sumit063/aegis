@@ -1,5 +1,4 @@
 /**
- * Inbound ports: use-case interfaces that adapters call (e.g. receive a provider message, send an
- * application-initiated call).
+ * Inbound ports: {@code *UseCase} interfaces adapters call, with their command and result records.
  */
 package dev.aegis.application.port.in;

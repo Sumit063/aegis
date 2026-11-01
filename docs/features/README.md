@@ -17,24 +17,26 @@ implemented, tested and merged on its own.
 
 ## Backlog
 
+Built in this order; each row is one branch and one PR.
+
 | ID | Feature | Milestone | Depends on | Status |
 |---|---|---|---|---|
-| F00 | Repository scaffold, toolchain, CI/CD | — | — | done |
-| F01 | Lab: Razorpay-compatible mock provider | M0 | F00 | planned |
-| F02 | Lab: reference application with flaw switches F1–F10 | M0 | F01 | planned |
-| F03 | Lab: attack scripts and results runner | M0 | F02 | planned |
-| F04 | Domain: messages, validations, outcomes, verdicts, check chain ([note](F04-domain-model.md)) | M1 | F00 | done |
-| F05 | Persistence: Flyway schema (`validations`, `payments`, `config`), evidence encryption | M1 | F04 | planned |
+| F00 | Repository scaffold, toolchain, CI/CD, layered package structure | — | — | done |
+| F04 | Domain: messages, validations, payments, verdicts, checks, `Gate` | M1 | F00 | done |
+| F01 | Lab: Razorpay-compatible mock gateway | M0 | F00 | planned |
+| F02 | Lab: reference shop with flaw switches F1–F10 | M0 | F01 | planned |
+| F03 | Lab: attack scripts, `lab/run.sh`, results, CI job | M0 | F02 | planned |
 | F06 | Configuration: connections, applications, secrets, fail-closed validation | M1 | F00 | planned |
-| F07 | Provider SPI, registry, contract test suite | M1 | F04 | planned |
+| F07 | Provider SPI, registry, contract test suite | M1 | F04, F06 | planned |
 | F08 | Razorpay adapter | M1 | F07 | planned |
-| F09 | Ingress: transport, signature, Kafka, acknowledgement | M1 | F06, F08 | planned |
-| F10 | Checker: inbound checks and verdicts | M1 | F05, F09 | planned |
-| F11 | Browser callback endpoint and signed redirect | M1 | F10 | planned |
+| F05 | Persistence: Flyway schema, entities, repositories, evidence encryption | M1 | F04, F06 | planned |
+| F09 | Ingress: signature, Kafka, acknowledgement | M1 | F05, F08 | planned |
+| F10 | Checker: inbound checks and verdicts | M1 | F09 | planned |
+| F11 | Browser callback and signed redirect | M1 | F10 | planned |
 | F12 | Gateway API: validations, payment requests, status checks | M1 | F05, F08 | planned |
-| F13 | Forwarder: mTLS, Aegis signature, optional JWE, retries, ordering | M1 | F10 | planned |
+| F13 | Forwarder: Aegis signature, optional JWE, retries, ordering | M1 | F10 | planned |
 | F14 | Admin API and runtime settings | M1 | F05 | planned |
-| F15 | Observability: metrics, alerts, dashboards, log masking | M1 | F09–F13 | planned |
-| F16 | Lab run through Aegis; M1 acceptance (T1–T19) | M1 | F03, F09–F15 | planned |
+| F15 | Observability: metrics, alerts, log masking | M1 | F09–F13 | planned |
+| F16 | Lab through Aegis; M1 acceptance (T1–T19) | M1 | F03, F09–F15 | planned |
 
 M2–M4 features are added here when M1 is done.

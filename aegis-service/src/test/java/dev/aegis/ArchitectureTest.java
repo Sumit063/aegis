@@ -89,8 +89,62 @@ class ArchitectureTest {
             .that()
             .areAnnotatedWith(org.springframework.web.bind.annotation.RestController.class)
             .should()
-            .resideInAPackage("dev.aegis.adapter.in.web..")
+            .resideInAPackage("dev.aegis.adapter.in.web.controller")
             .andShould()
             .haveSimpleNameEndingWith("Controller")
-            .as("REST controllers are *Controller classes in adapter.in.web");
+            .as("REST controllers are *Controller classes in adapter.in.web.controller");
+
+    @ArchTest
+    static final ArchRule useCasesAreServices = classes()
+            .that()
+            .areAnnotatedWith(org.springframework.stereotype.Service.class)
+            .should()
+            .resideInAPackage("dev.aegis.application.service")
+            .andShould()
+            .haveSimpleNameEndingWith("Service")
+            .as("use-case implementations are *Service classes in application.service");
+
+    @ArchTest
+    static final ArchRule inboundPortsAreUseCases = classes()
+            .that()
+            .resideInAPackage("dev.aegis.application.port.in")
+            .and()
+            .areInterfaces()
+            .and()
+            .doNotHaveSimpleName("package-info")
+            .should()
+            .haveSimpleNameEndingWith("UseCase")
+            .as("inbound ports are *UseCase interfaces");
+
+    @ArchTest
+    static final ArchRule outboundPortsAreNamedForTheirRole = classes()
+            .that()
+            .resideInAPackage("dev.aegis.application.port.out")
+            .and()
+            .areInterfaces()
+            .and()
+            .doNotHaveSimpleName("package-info")
+            .should()
+            .haveSimpleNameEndingWith("Port")
+            .orShould()
+            .haveSimpleNameEndingWith("Repository")
+            .as("outbound ports are *Port or *Repository interfaces");
+
+    @ArchTest
+    static final ArchRule entitiesLiveTogether = classes()
+            .that()
+            .areAnnotatedWith(jakarta.persistence.Entity.class)
+            .should()
+            .resideInAPackage("dev.aegis.adapter.out.persistence.entity")
+            .andShould()
+            .haveSimpleNameEndingWith("Entity")
+            .as("JPA entities are *Entity classes in adapter.out.persistence.entity");
+
+    @ArchTest
+    static final ArchRule springDataRepositoriesLiveTogether = classes()
+            .that()
+            .areAssignableTo(org.springframework.data.repository.Repository.class)
+            .should()
+            .resideInAPackage("dev.aegis.adapter.out.persistence.repository")
+            .as("Spring Data repositories live in adapter.out.persistence.repository");
 }
