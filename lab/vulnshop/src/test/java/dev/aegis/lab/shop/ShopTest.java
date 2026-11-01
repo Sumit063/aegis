@@ -12,7 +12,9 @@ import org.junit.jupiter.api.Test;
 class ShopTest {
 
     private static Shop shop(Flaw... flaws) {
-        Shop shop = new Shop(new ShopProperties(null, null, null, null, null, Set.of(flaws), Duration.ofDays(7)));
+        Shop shop = new Shop(
+                new ShopProperties(null, null, null, null, null, Set.of(), Duration.ofDays(7)),
+                new Flaws(Set.of(flaws)));
         shop.add(1_000_000, "order_big", "SHOP-BIG");
         shop.add(1_000, "order_small", "SHOP-SMALL");
         return shop;
