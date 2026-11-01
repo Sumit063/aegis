@@ -44,8 +44,8 @@ Batches: **H1** payment facts · **H2** database-enforced identities · **H3** a
 | Body limit before parsing | 64 KB read cap before anything else | none | — |
 | Ambiguous publish timeout | timeout → 503 → provider retries → second copy is a repeat | documented; harmless by message ID | — |
 | Offsets after DB commit; crash between | `ack-mode: record`; redelivery = repeat (T14) | none | — |
-| Poison messages / dead letter | retry forever (blocks the partition) | bounded retries for non-transient errors → `aegis.inbound.dlt`, metric, replay | H3 |
-| Invalid signatures: 401 and also published | yes, unbounded | **flood risk**: bounded quarantine with per-connection quota | H3 |
+| Poison messages / dead letter | retry forever (blocks the partition) | done: outage = retry forever; bad record → `aegis.inbound.dlt` after 3, alert | H3 ✓ |
+| Invalid signatures: 401 and also published | yes, unbounded | done: 401 + evidence quota 60/min per connection, 7-day retention | H3 ✓ |
 | Exactly-once claims | none made; at-least-once + idempotent consumer | — | — |
 
 ## 4. PostgreSQL
@@ -57,7 +57,7 @@ Batches: **H1** payment facts · **H2** database-enforced identities · **H3** a
 | Unbounded JSON arrays | repeats only count; unverified traffic never joins a genuine row; status checks limited | bounded by design; documented | — |
 | Indexes | forward-due partial index, lookups | done | H2 ✓ |
 | Migrations fresh and existing | Flyway V1 on staging | V2 backfills existing rows; applied on staging | H2 ✓ |
-| Retention of evidence and rejected traffic | 180 days for all | shorter retention for quarantine (H3) | H3 |
+| Retention of evidence and rejected traffic | 180 days for all | done: 7 days | H3 ✓ |
 
 ## 5. Forwarding
 
@@ -96,7 +96,7 @@ Batches: **H1** payment facts · **H2** database-enforced identities · **H3** a
 | Requirement | As built | Gap | Batch |
 |---|---|---|---|
 | Size limits, timeouts | 64 KB, HTTP client timeouts | none | — |
-| Per-connection rate/concurrency limits | none | add | H3 |
+| Per-connection rate/concurrency limits | none | done: rate 429 + in-progress 503 per connection | H3 ✓ |
 | Tenant scoping on the Gateway API | connection must belong to the caller | none (T16) | — |
 | Admin separate from runtime | separate key and path; operator scope is global (documented) | — | — |
 | SSRF via destinations | URLs come only from operator configuration | startup policy: block metadata/link-local; explicit flag for private networks | H4 |
@@ -107,14 +107,14 @@ Batches: **H1** payment facts · **H2** database-enforced identities · **H3** a
 |---|---|---|---|
 | Structured, redacted logs | ECS JSON; `ObservabilityIT` | none | — |
 | Correlation IDs through HTTP and Kafka | ingress record ID only | MDC + header propagation | H5 |
-| Metrics and alerts | verdicts, ack latency, forwards, lag | DLT depth, quarantine drops (H3) | H3 |
+| Metrics and alerts | verdicts, ack latency, forwards, lag | done: `aegis_dead_letters_total`, `aegis_ingress_limited_total`, alerts | H3 ✓ |
 | Readiness reflects dependencies | database only | add Kafka | H5 |
 | Backup, restore, replay runbook | not written | write and rehearse | H5 |
 
 ## 10. Failure-injection suite (review items 1–26)
 
-Covered today: 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15 (by message ID), 16, 17, 18, 20 (lease), 21,
-23 (Gateway), 25 (leases and Kafka offsets). To add: 22 (H3), 19 (documented
+Covered today: 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 22, 14, 15 (by message ID), 16, 17, 18, 20 (lease), 21,
+23 (Gateway), 25 (leases and Kafka offsets). To add: 19 (documented
 merchant idempotency), 24 (H4), 26 (H5).
 
 ## 11. Performance
