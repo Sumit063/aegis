@@ -33,6 +33,25 @@ public interface PaymentJpaRepository extends JpaRepository<PaymentEntity, Long>
 
     List<PaymentEntity> findByValidationIdOrderById(Long validationId);
 
+    @Query(value = """
+                    SELECT p.* FROM payments p LEFT JOIN validations v ON v.id = p.validation_id
+                    WHERE p.payment_ref = :ref OR v.merchant_ref = :ref OR v.provider_ref = :ref
+                    ORDER BY p.id DESC LIMIT 100""", nativeQuery = true)
+    List<PaymentEntity> findByRef(@Param("ref") String ref);
+
+    /** {@code @>} is JSON containment: some message in the row has verdict BLOCKED. */
+    @Query(value = """
+                    SELECT * FROM payments
+                    WHERE updated_at >= :since AND messages @> '[{"verdict":"BLOCKED"}]'
+                    ORDER BY updated_at DESC LIMIT :limit""", nativeQuery = true)
+    List<PaymentEntity> findBlockedSince(@Param("since") Instant since, @Param("limit") int limit);
+
+    @Modifying
+    @Query(value = """
+                    DELETE FROM payments WHERE id IN
+                      (SELECT id FROM payments WHERE created_at < :cutoff ORDER BY id LIMIT :batch)""", nativeQuery = true)
+    int deleteOlderThan(@Param("cutoff") Instant cutoff, @Param("batch") int batch);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from PaymentEntity p where p.id = :id")
     Optional<PaymentEntity> lockById(@Param("id") Long id);

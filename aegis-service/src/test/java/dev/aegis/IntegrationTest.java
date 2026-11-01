@@ -49,6 +49,8 @@ public abstract class IntegrationTest {
     public static final String EXAMPLE_WEBHOOK_SECRET = "example-webhook-secret-it-0001";
     public static final String EXAMPLE_API_KEY = "example-api-key-it-000000001";
     public static final String OTHER_API_KEY = "other-application-api-key-it-00000001";
+    /** The {@code local} profile's admin key. */
+    public static final String ADMIN_KEY = "local-only-admin-key-000000000000";
 
     @ServiceConnection
     protected static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17.11-alpine");

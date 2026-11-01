@@ -18,6 +18,16 @@ public interface ForwardRepository {
      */
     List<Claimed> claimDue(Instant now, int limit, Duration lease);
 
+    /**
+     * Makes entry {@code n} pending again (attempts reset) and the payment due now.
+     *
+     * @return false if there is no such passed, forwarded entry
+     */
+    boolean reforward(long paymentId, int n, Instant now);
+
+    /** Gives a claimed payment back, due again at {@code due} (e.g. its application is paused). */
+    void release(long paymentId, Instant due);
+
     /** Records the outcome of one delivery attempt and recomputes when the payment is next due. */
     void record(long paymentId, int n, Attempt attempt);
 
