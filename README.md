@@ -27,7 +27,10 @@ provider.
 - Nothing reaches the application without passing every check.
 - Nothing is acknowledged to a provider before it is stored.
 - A fact (payment X succeeded) is forwarded once, whichever channel reports it first.
-- No passed message is lost before the application acknowledges it.
+- A passed message is delivered to the application at least once, always with the same `id`, retried
+  for 72 hours; after that it stays stored and an operator re-forwards it. It is never dropped.
+- Durability against losing a broker's or the database's disk depends on the deployment profile and
+  backups; [RUNBOOK §2](docs/engineering/RUNBOOK.md) states exactly what holds for each failure.
 - Aegis never initiates a call to a provider.
 
 ## Architecture

@@ -4,7 +4,10 @@ package dev.aegis.domain.message;
 public enum BlockReason {
     BAD_SIGNATURE,
     UNPARSEABLE,
+    /** Older than the provider's retry window. */
     REPLAY,
+    /** Dated further in the future than the provider's allowed clock skew. */
+    FUTURE_TIMESTAMP,
     NO_VALIDATION,
     AMOUNT_MISMATCH,
     /** A stale outcome: it would move a payment backwards (e.g. FAILED after a capture). */

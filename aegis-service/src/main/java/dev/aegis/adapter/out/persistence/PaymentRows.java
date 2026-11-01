@@ -38,7 +38,7 @@ class PaymentRows {
                 row.getValidationId(),
                 Ref.of(row.getProvider()),
                 row.getPaymentRef() == null ? null : Ref.of(row.getPaymentRef()),
-                row.getStatus() == null ? null : Outcome.valueOf(row.getStatus()),
+                status(row.getStatus()),
                 entries);
     }
 
@@ -114,5 +114,14 @@ class PaymentRows {
                 forward,
                 stored.amount() == null ? null : Money.of(stored.amount(), stored.currency()),
                 stored.factRef() == null ? null : Ref.of(stored.factRef()));
+    }
+
+    // REFUNDED was a payment state before V3; a refund is a fact on a captured payment, so a row
+    // written by an older version (e.g. during a rollback) reads as captured.
+    private static Outcome status(String stored) {
+        if (stored == null) {
+            return null;
+        }
+        return stored.equals("REFUNDED") ? Outcome.SUCCESS : Outcome.valueOf(stored);
     }
 }

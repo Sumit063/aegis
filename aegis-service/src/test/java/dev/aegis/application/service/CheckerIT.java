@@ -5,6 +5,7 @@ import static dev.aegis.Scenario.unique;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import dev.aegis.FakeProvider;
 import dev.aegis.IntegrationTest;
 import dev.aegis.Scenario;
 import dev.aegis.application.port.in.CheckMessageUseCase;
@@ -14,9 +15,11 @@ import dev.aegis.application.port.out.IngressRecord;
 import dev.aegis.application.port.out.PaymentRepository;
 import dev.aegis.application.port.out.ValidationRepository;
 import dev.aegis.domain.message.BlockReason;
+import dev.aegis.domain.message.Outcome;
 import dev.aegis.domain.message.Verdict;
 import dev.aegis.domain.payment.Payment;
 import dev.aegis.domain.payment.Validation;
+import dev.aegis.domain.shared.Money;
 import dev.aegis.provider.spi.Channel;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -232,6 +235,55 @@ class CheckerIT extends IntegrationTest {
         Payment payment = payments.find(first.paymentId()).orElseThrow();
         assertThat(payment.wasCaptured()).isTrue();
         assertThat(payment.entries()).filteredOn(e -> e.verdict().passed()).hasSize(3);
+    }
+
+    /**
+     * H6: a partial refund does not hide the capture. Razorpay still reports the payment "captured", and
+     * that status reply is a confirmation; a full refund is reported "refunded" with the cumulative
+     * amount, an observation that adds no refund; late contradictory events stay blocked.
+     */
+    @Test
+    void statusChecksAfterRefundsConfirmTheCapture() throws Exception {
+        String orderId = unique("order_");
+        String paymentId = unique("pay_");
+        Scenario.order(validations, tx, orderId, 49_900);
+        checker.check(webhook(
+                event("payment.captured", orderId, paymentId, 49_900, Instant.now()), unique("evt_"), Instant.now()));
+        checker.check(webhook(refund(paymentId, "rfnd_1", 10_000), unique("evt_"), Instant.now()));
+
+        HttpResponse<String> partial = statusCheck(orderId, paymentId, "captured", 10_000);
+        checker.check(webhook(refund(paymentId, "rfnd_2", 39_900), unique("evt_"), Instant.now()));
+        HttpResponse<String> full = statusCheck(orderId, paymentId, "refunded", 49_900);
+        Result lateFailure = checker.check(webhook(
+                event("payment.failed", orderId, paymentId, 49_900, Instant.now()), unique("evt_"), Instant.now()));
+
+        assertThat(partial.statusCode()).isEqualTo(200);
+        assertThat(partial.headers().firstValue("X-Aegis-Verdict")).contains("PASSED");
+        assertThat(full.headers().firstValue("X-Aegis-Verdict")).contains("PASSED");
+        assertThat(lateFailure.verdict()).isEqualTo(Verdict.blocked(BlockReason.DOWNGRADE));
+        Payment payment = payments.find(lateFailure.paymentId()).orElseThrow();
+        assertThat(payment.status()).isEqualTo(Outcome.SUCCESS);
+        assertThat(payment.refunded(Money.of(0, "INR").currency())).isEqualTo(Money.of(49_900, "INR"));
+        assertThat(jdbc.queryForObject("select status from payments where payment_ref = ?", String.class, paymentId))
+                .isEqualTo("SUCCESS");
+    }
+
+    private HttpResponse<String> statusCheck(String orderId, String paymentId, String status, long refunded)
+            throws Exception {
+        FakeProvider.on(
+                "GET /v1/payments/" + paymentId,
+                r -> new FakeProvider.Answer(200, """
+                        {"id":"%s","entity":"payment","order_id":"%s","status":"%s","amount":49900,\
+                        "currency":"INR","amount_refunded":%d,"refund_status":"%s"}""".formatted(
+                                paymentId, orderId, status, refunded, refunded == 49_900 ? "full" : "partial")));
+        return HttpClient.newHttpClient()
+                .send(
+                        HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/gw/razorpay/status"))
+                                .header("Content-Type", "application/json")
+                                .header("Authorization", "Bearer " + SHOP_API_KEY)
+                                .POST(HttpRequest.BodyPublishers.ofString("{\"payment_id\":\"" + paymentId + "\"}"))
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString());
     }
 
     private static String refund(String paymentId, String refundId, long amount) {
