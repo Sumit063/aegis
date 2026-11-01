@@ -1,0 +1,26 @@
+# Connections and applications of one environment (LLD §11). Lives next to .env on the host as
+# aegis.yaml and is mounted read-only into the container. Secret values are ${ENV} placeholders
+# filled from .env; a missing or short secret stops startup (fail closed).
+#
+# Example: a shop paying through Razorpay.
+#
+# aegis:
+#   connections:
+#     razorpay:                                   # used in URLs: /in/razorpay, /gw/razorpay/...
+#       adapter: razorpay
+#       application: shop
+#       base-url: https://api.razorpay.com
+#       settings:
+#         key-id: ${RZP_KEY_ID}
+#       secrets:
+#         key-secret: [ "${RZP_KEY_SECRET}" ]
+#         webhook: [ "${RZP_WEBHOOK_SECRET}", "${RZP_WEBHOOK_SECRET_PREVIOUS:}" ]   # current, previous
+#   applications:
+#     shop:
+#       api-key: ${SHOP_AEGIS_API_KEY}            # the shop's key for /gw (32+ characters)
+#       signing-secret: ${SHOP_AEGIS_SECRET}      # Aegis signs forwards with it (32+ characters)
+#       forward-url: https://shop.internal/aegis/messages
+#       return-url: https://shop.example/payment/result
+#       client-cert-subject: ""                   # e.g. CN=shop to require a client certificate
+#       jwe-public-key: ""                        # base64 RSA public key to encrypt forwards
+aegis: {}
