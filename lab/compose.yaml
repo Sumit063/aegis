@@ -1,0 +1,31 @@
+# Exploit Lab: a gateway and a shop wired directly to it. Lab-only fake secrets; ports on 127.0.0.1.
+#   lab/run.sh            builds, starts this, runs every attack, writes lab/RESULTS.md
+name: aegis-lab
+
+x-java: &java
+  restart: "no"
+  healthcheck:
+    test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/$$PORT"]
+    interval: 2s
+    timeout: 2s
+    retries: 60
+
+services:
+  mock-gateway:
+    <<: *java
+    build: { context: .., dockerfile: lab/Dockerfile, args: { MODULE: mock-gateway } }
+    environment:
+      PORT: 8090
+      MOCK_ACCOUNTS_SHOP_WEBHOOK_URL: http://shop-direct:8091/webhooks/razorpay
+    ports: ["127.0.0.1:8090:8090"]
+
+  # The shop integrated directly with the gateway. Flaws are switched per attack (PUT /flaws).
+  shop-direct:
+    <<: *java
+    build: { context: .., dockerfile: lab/Dockerfile, args: { MODULE: vulnshop } }
+    environment:
+      PORT: 8091
+      SHOP_ORDERS_URL: http://mock-gateway:8090/v1/orders
+      # Stands in for "7 days" so the F10 replay can be shown in seconds.
+      SHOP_MEMORY: 3s
+    ports: ["127.0.0.1:8091:8091"]

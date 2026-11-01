@@ -23,7 +23,8 @@ class AegisControllerTest {
     }
 
     private static Shop shop() {
-        Shop shop = new Shop(new ShopProperties(null, null, null, null, null, Set.of(), Duration.ofDays(7)));
+        Shop shop = new Shop(
+                new ShopProperties(null, null, null, null, null, Set.of(), Duration.ofDays(7)), new Flaws(Set.of()));
         shop.add(49_900, "order_A", "SHOP-1");
         return shop;
     }
