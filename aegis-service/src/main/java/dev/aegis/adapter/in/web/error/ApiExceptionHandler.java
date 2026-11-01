@@ -1,6 +1,8 @@
 package dev.aegis.adapter.in.web.error;
 
 import dev.aegis.adapter.in.web.dto.InboundRequest;
+import dev.aegis.application.port.in.BadRequestException;
+import dev.aegis.application.port.in.ForbiddenException;
 import dev.aegis.application.port.in.UnavailableException;
 import dev.aegis.application.port.in.UnknownConnectionException;
 import org.slf4j.Logger;
@@ -33,5 +35,15 @@ class ApiExceptionHandler {
     @ExceptionHandler(InboundRequest.BodyTooLargeException.class)
     ProblemDetail tooLarge(InboundRequest.BodyTooLargeException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.CONTENT_TOO_LARGE, e.getMessage());
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    ProblemDetail forbidden(ForbiddenException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "this connection belongs to another application");
+    }
+
+    @ExceptionHandler(BadRequestException.class)
+    ProblemDetail badRequest(BadRequestException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 }
