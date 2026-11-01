@@ -23,7 +23,7 @@ implemented, tested and merged on its own.
 | F01 | Lab: Razorpay-compatible mock provider | M0 | F00 | planned |
 | F02 | Lab: reference application with flaw switches F1–F10 | M0 | F01 | planned |
 | F03 | Lab: attack scripts and results runner | M0 | F02 | planned |
-| F04 | Domain: messages, validations, outcomes, verdicts, check chain | M1 | F00 | planned |
+| F04 | Domain: messages, validations, outcomes, verdicts, check chain ([note](F04-domain-model.md)) | M1 | F00 | done |
 | F05 | Persistence: Flyway schema (`validations`, `payments`, `config`), evidence encryption | M1 | F04 | planned |
 | F06 | Configuration: connections, applications, secrets, fail-closed validation | M1 | F00 | planned |
 | F07 | Provider SPI, registry, contract test suite | M1 | F04 | planned |
