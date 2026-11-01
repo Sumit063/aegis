@@ -51,3 +51,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Deploy ${{ env.TAG }} to ${{ env.TARGET }}
         run: deploy/deploy.sh "$TARGET" "$TAG"
+      - name: Check ${{ env.TARGET }}
+        if: always()
+        run: |
+          deploy/check.sh "$TARGET" "$TAG" | tee report.txt
+          { echo '```'; cat report.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          ! grep -q '✗' report.txt
