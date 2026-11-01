@@ -83,6 +83,7 @@ class ForwardHttpClient implements ForwardClientPort {
                 .timeout(Duration.ofSeconds(10))
                 .header("Content-Type", contentType)
                 .header("X-Aegis-Timestamp", timestamp)
+                .header("X-Aegis-Message-Id", delivery.id())
                 .header("X-Aegis-Signature", "v1=" + sign(application, timestamp + "." + body))
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();

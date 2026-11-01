@@ -4,6 +4,7 @@ import dev.aegis.application.port.in.CheckMessageUseCase;
 import dev.aegis.application.port.out.IngressRecord;
 import dev.aegis.config.ConditionalOnRole;
 import dev.aegis.config.Role;
+import org.slf4j.MDC;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
@@ -26,6 +27,12 @@ class CheckerListener {
 
     @KafkaListener(topics = "aegis.inbound", groupId = "aegis-checker")
     void onRecord(byte[] value) {
-        checker.check(json.readValue(value, IngressRecord.class));
+        IngressRecord record = json.readValue(value, IngressRecord.class);
+        MDC.put("correlationId", record.correlationId() == null ? record.id().toString() : record.correlationId());
+        try {
+            checker.check(record);
+        } finally {
+            MDC.remove("correlationId");
+        }
     }
 }

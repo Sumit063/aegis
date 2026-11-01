@@ -238,6 +238,15 @@ unless a private network is explicitly allowed. Private and loopback addresses a
 purpose (self-hosted merchants).
 - The browser's signed result is bound to the payment and timestamped (`payment`, `ts`).
 
+### D28 — Operability
+- **Readiness** includes Kafka and the database: a process that cannot store messages takes no traffic.
+- **Correlation:** `X-Request-Id` (or a new one) is logged with every line, written into the Kafka
+  record and restored by the Checker; deliveries carry `X-Aegis-Message-Id` (= the stable `id`).
+- **Forwarder** drains while work is due (measured: a fixed pace capped it near 100 payments/s).
+- Guarantees are stated in RUNBOOK §2: acknowledged = durably in Kafka; at-least-once delivery with a
+  stable `id`; facts at most once by database keys. Exactly-once side effects need the receiver to
+  dedupe by `id`; single-host disks need backups.
+
 ## Design review log
 
 | # | Issue | Fix |

@@ -88,6 +88,9 @@ services:
       AEGIS_DB_PASSWORD: lab-only
       AEGIS_KAFKA_BOOTSTRAP: kafka:29092
       AEGIS_CONFIG: /config/aegis.yaml
+      # The lab measures the pipeline (lab/bench); the per-connection limiter is tested on its own (LimitsIT).
+      AEGIS_LIMITS_REQUESTS_PER_MINUTE: 600000
+      AEGIS_LIMITS_BURST: 10000
     volumes:
       - ./aegis.yaml:/config/aegis.yaml:ro
     ports: ["127.0.0.1:8080:8080", "127.0.0.1:8081:8081"]
@@ -104,5 +107,7 @@ services:
       # The shop no longer holds any Razorpay secret: Aegis does.
       SHOP_KEY_SECRET: ""
       SHOP_WEBHOOK_SECRET: ""
-      SHOP_MEMORY: 3s
+      # A realistic memory: behind Aegis the shop is not the one stopping replays (F10 is still
+      # blocked, by Aegis), and deliveries under load can take longer than the direct shop's 3 s.
+      SHOP_MEMORY: 1h
     ports: ["127.0.0.1:8092:8092"]
