@@ -178,7 +178,17 @@ class AdminIT extends IntegrationTest {
                 "insert into payments (provider, payment_ref, messages, created_at, updated_at) values ('razorpay', ?, '[]', now() - interval '200 days', now())",
                 old);
 
-        assertThat(retention.purge()).isGreaterThanOrEqualTo(1);
+        String forged = "unverified-" + unique("x");
+        jdbc.update(
+                "insert into payments (provider, messages, created_at, updated_at) values ('razorpay', ?::jsonb, now() - interval '8 days', now())",
+                "[{\"n\":1,\"messageId\":\"" + forged
+                        + "\",\"type\":\"WEBHOOK\",\"outcome\":\"OTHER\",\"verdict\":\"BLOCKED\",\"reason\":\"BAD_SIGNATURE\",\"duplicates\":0,\"at\":\"2026-01-01T00:00:00Z\"}]");
+
+        assertThat(retention.purge()).isGreaterThanOrEqualTo(2);
+        assertThat(jdbc.queryForObject(
+                        "select count(*) from payments where messages::text like ?", Integer.class, "%" + forged + "%"))
+                .as("rejected traffic is kept a week")
+                .isZero();
 
         assertThat(jdbc.queryForObject("select count(*) from payments where payment_ref = ?", Integer.class, old))
                 .isZero();

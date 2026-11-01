@@ -33,6 +33,19 @@ groups:
         annotations:
           summary: "{{ $labels.application }}: a message could not be delivered for 72 h and is FAILED (re-forward from Admin)."
 
+      - alert: DeadLetters
+        expr: increase(aegis_dead_letters_total[15m]) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: A record could not be processed and went to aegis.inbound.dlt (see docs/engineering/RUNBOOK.md, replay).
+
+      - alert: IngressLimited
+        expr: sum by (limit) (rate(aegis_ingress_limited_total[5m])) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Public endpoints are refusing requests ({{ $labels.limit }} limit): a flood, or limits too low for real traffic."
+
       - alert: ForwardLag
         expr: aegis_forward_lag_seconds > 300
         for: 5m

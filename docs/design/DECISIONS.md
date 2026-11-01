@@ -220,6 +220,17 @@ primary keys written in the same transaction as the payment row.
 - **Rejected:** moving the whole message history out of the JSON field: history per payment is
   bounded (repeats only count, forgeries never join), and the identities are what needs a constraint.
 
+### D26 — Unauthenticated traffic has bounded cost
+- A message with a bad signature gets **401** (the provider is told it was not accepted) and is kept
+  as evidence only within a per-connection quota (`aegis.limits.forgeries-per-minute`, default 60);
+  beyond it, it is counted and dropped. Untrusted rows are kept 7 days, not 180.
+- `/in/{connection}` has a per-connection request rate (429) and in-progress cap (503), applied
+  before the body is read. Providers retry both: genuine messages are delayed, never lost.
+- The Checker retries outages forever (nothing skipped) but sends a record that is itself bad to
+  `aegis.inbound.dlt` after three attempts, so one poison record cannot stop a partition.
+- Limits are per instance and approximate across instances: they bound load, they never decide
+  anything about money.
+
 ## Design review log
 
 | # | Issue | Fix |
