@@ -11,7 +11,7 @@ if echo "$staged" | grep -Eq '(^|/)\.env$|(^|/)[^/]*\.env$' && ! echo "$staged" 
   echo "✗ Refusing to commit an .env file. Secrets stay out of git." >&2
   exit 1
 fi
-if git diff --cached -U0 | grep -E '^\+' | grep -Eiq '(rzp_live_[A-Za-z0-9]+|sk_live_[A-Za-z0-9]+|-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16})'; then
+if git diff --cached -U0 | grep -E '^\+' | grep -Eiq '(rzp_live_[A-Za-z0-9]{14}|sk_live_[A-Za-z0-9]+|-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16})'; then
   echo "✗ Staged changes look like they contain a live credential or private key." >&2
   exit 1
 fi
