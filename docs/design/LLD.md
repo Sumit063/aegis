@@ -41,7 +41,9 @@ Ingress (synchronous, before acknowledging)
                    (key = connection:payment_ref, so one payment stays in order) → 503 if not stored
   5. acknowledge   adapter.ack(): 2xx or <Ack/>
 
-Bodies over 64 KB → 413. `Cookie` and `Authorization` headers are not kept.
+Bodies over 64 KB → 413. `Cookie` and `Authorization` headers are not kept. Per connection: request
+rate → 429, requests in progress → 503 (before the body is read); unverified messages are logged for
+evidence only within a quota (60/min), then only counted (D26).
 Checker (Kafka consumer, one database transaction per message)
   6. parse         adapter.parse() → message_id, provider_ref, payment_ref, outcome, amount,
                    sent_at, fact_ref (e.g. a refund's ID)

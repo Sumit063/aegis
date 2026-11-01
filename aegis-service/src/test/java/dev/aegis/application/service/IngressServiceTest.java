@@ -36,6 +36,7 @@ class IngressServiceTest {
                 log,
                 Fakes.CIPHER,
                 Fakes.METRICS,
+                new IngressLimits(6_000, 500, 64, 3),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -76,6 +77,24 @@ class IngressServiceTest {
                         .receive("example", Channel.SERVER, RawMessage.of(Map.of(), BODY))
                         .verified())
                 .isFalse();
+    }
+
+    /** A flood of forgeries is refused; only a bounded sample is kept as evidence (review item 22). */
+    @Test
+    void keepsOnlyABoundedSampleOfForgeries() {
+        IngressService service = service(new ExampleAdapter());
+        RawMessage forged = RawMessage.of(Map.of(ExampleAdapter.SIGNATURE, "00"), BODY);
+
+        for (int i = 0; i < 100; i++) {
+            assertThat(service.receive("example", Channel.SERVER, forged).verified())
+                    .isFalse();
+        }
+
+        assertThat(log.records).hasSize(3);
+        assertThat(service.receive("example", Channel.SERVER, Example.signed(BODY))
+                        .verified())
+                .as("genuine messages are never limited by the forgery quota")
+                .isTrue();
     }
 
     @Test

@@ -19,6 +19,11 @@ class RetentionPersistenceAdapter implements RetentionRepository {
     }
 
     @Override
+    public int purgeUntrustedOlderThan(Instant cutoff, int batch) {
+        return payments.deleteUntrustedOlderThan(cutoff, batch);
+    }
+
+    @Override
     public int purgeOlderThan(Instant cutoff, int batch) {
         int deleted = payments.deleteOlderThan(cutoff, batch);
         return deleted + validations.deleteOlderThan(cutoff, batch - deleted);

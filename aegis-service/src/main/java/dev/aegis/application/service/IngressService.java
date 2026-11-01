@@ -37,6 +37,7 @@ public class IngressService implements ReceiveProviderMessageUseCase {
     private final IngressLogPort ingressLog;
     private final EvidenceCipherPort cipher;
     private final MetricsPort metrics;
+    private final TokenBucket forgeries;
     private final Clock clock;
 
     public IngressService(
@@ -45,12 +46,14 @@ public class IngressService implements ReceiveProviderMessageUseCase {
             IngressLogPort ingressLog,
             EvidenceCipherPort cipher,
             MetricsPort metrics,
+            IngressLimits limits,
             Clock clock) {
         this.directory = directory;
         this.providers = providers;
         this.ingressLog = ingressLog;
         this.cipher = cipher;
         this.metrics = metrics;
+        this.forgeries = new TokenBucket(limits.forgeriesPerMinute(), limits.forgeriesPerMinute(), clock);
         this.clock = clock;
     }
 
@@ -71,6 +74,12 @@ public class IngressService implements ReceiveProviderMessageUseCase {
                 verified ? key(adapter, channel, clear, connection, receivedAt) : connection.name(),
                 message.headers(),
                 cipher.seal(message.body()));
+        if (!verified && !forgeries.tryAcquire(connection.name())) {
+            // Over the evidence quota: refused and counted, not stored, so a flood of forgeries cannot
+            // fill Kafka, the database or the disk (HARDENING §3).
+            metrics.acknowledged(connection.name(), false, Duration.between(receivedAt, clock.instant()));
+            return new Receipt(false, null);
+        }
         try {
             ingressLog.append(record);
         } catch (RuntimeException e) {

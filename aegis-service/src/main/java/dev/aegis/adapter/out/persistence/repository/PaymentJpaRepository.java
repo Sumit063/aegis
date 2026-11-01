@@ -55,6 +55,14 @@ public interface PaymentJpaRepository extends JpaRepository<PaymentEntity, Long>
                       (SELECT id FROM payments WHERE created_at < :cutoff ORDER BY id LIMIT :batch)""", nativeQuery = true)
     int deleteOlderThan(@Param("cutoff") Instant cutoff, @Param("batch") int batch);
 
+    @Modifying
+    @Query(value = """
+                    DELETE FROM payments WHERE id IN
+                      (SELECT id FROM payments
+                       WHERE payment_ref IS NULL AND validation_id IS NULL AND created_at < :cutoff
+                       ORDER BY id LIMIT :batch)""", nativeQuery = true)
+    int deleteUntrustedOlderThan(@Param("cutoff") Instant cutoff, @Param("batch") int batch);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from PaymentEntity p where p.id = :id")
     Optional<PaymentEntity> lockById(@Param("id") Long id);

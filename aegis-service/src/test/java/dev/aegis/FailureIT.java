@@ -122,4 +122,42 @@ class FailureIT extends IntegrationTest {
 
         assertThat(FakeProvider.received("/")).hasSize(before);
     }
+
+    /** A record that cannot be read goes to the dead-letter topic; the partition moves on. */
+    @Test
+    void aPoisonRecordIsDeadLetteredAndTheRestFlows() throws Exception {
+        java.util.Properties config = new java.util.Properties();
+        config.put("bootstrap.servers", KAFKA.getBootstrapServers());
+        try (var producer = new org.apache.kafka.clients.producer.KafkaProducer<String, byte[]>(
+                config,
+                new org.apache.kafka.common.serialization.StringSerializer(),
+                new org.apache.kafka.common.serialization.ByteArraySerializer())) {
+            producer.send(new org.apache.kafka.clients.producer.ProducerRecord<>(
+                            "aegis.inbound", "razorpay:poison", "not json".getBytes()))
+                    .get();
+        }
+        String orderId = unique("order_");
+        Validation order = Scenario.order(validations, tx, orderId, 49_900);
+        assertThat(webhook(event("payment.captured", orderId, unique("pay_"), 49_900, Instant.now())))
+                .isEqualTo(200);
+
+        await().atMost(Duration.ofSeconds(30))
+                .until(() -> validations.find(order.id()).orElseThrow().status() == Validation.Status.PAID);
+        config.put("group.id", "dlt-" + unique("g"));
+        config.put("auto.offset.reset", "earliest");
+        try (var consumer = new org.apache.kafka.clients.consumer.KafkaConsumer<String, byte[]>(
+                config,
+                new org.apache.kafka.common.serialization.StringDeserializer(),
+                new org.apache.kafka.common.serialization.ByteArrayDeserializer())) {
+            consumer.subscribe(java.util.List.of("aegis.inbound.dlt"));
+            await().atMost(Duration.ofSeconds(30)).until(() -> {
+                for (var record : consumer.poll(Duration.ofMillis(500))) {
+                    if ("razorpay:poison".equals(record.key())) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+        }
+    }
 }
