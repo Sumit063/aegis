@@ -23,7 +23,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
             "management.server.port=0",
             "aegis.applications.shop.api-key=" + IntegrationTest.SHOP_API_KEY,
             "aegis.applications.shop.signing-secret=" + IntegrationTest.SHOP_SECRET,
-            "aegis.applications.shop.forward-url=http://127.0.0.1:1/aegis/messages",
             "aegis.applications.shop.return-url=http://shop.test/return",
             "aegis.connections.razorpay.adapter=razorpay",
             "aegis.connections.razorpay.application=shop",
@@ -68,6 +67,9 @@ public abstract class IntegrationTest {
                 "aegis.connections.razorpay.base-url", () -> FakeProvider.url().toString());
         registry.add(
                 "aegis.connections.example.base-url", () -> FakeProvider.url().toString());
+        registry.add(
+                "aegis.applications.shop.forward-url",
+                () -> FakeApplication.url().toString());
     }
 
     @TestConfiguration(proxyBeanMethods = false)

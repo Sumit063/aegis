@@ -33,6 +33,7 @@
     <palantir-java-format.version>2.103.0</palantir-java-format.version>
     <jacoco.version>0.8.16</jacoco.version>
     <jacoco.minimum.line.coverage>0.80</jacoco.minimum.line.coverage>
+    <nimbus-jose-jwt.version>10.10</nimbus-jose-jwt.version>
   </properties>
 
   <dependencyManagement>
@@ -41,6 +42,11 @@
         <groupId>com.tngtech.archunit</groupId>
         <artifactId>archunit-junit5</artifactId>
         <version>${archunit.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.nimbusds</groupId>
+        <artifactId>nimbus-jose-jwt</artifactId>
+        <version>${nimbus-jose-jwt.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

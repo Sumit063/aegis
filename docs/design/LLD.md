@@ -254,8 +254,13 @@ Content-Type: application/json            (or application/jose when JWE is enabl
 - `id` = payment row id + message number: stable across retries, so the application ignores repeats.
 - Retries: exponential backoff with jitter, starting at 1 s and capped at 10 min, for 72 h. After that the message is
   `FAILED`, an alert fires, and it can be re-forwarded from Admin.
-- Order is preserved: the Forwarder locks a due payment row (`FOR UPDATE SKIP LOCKED`) and sends its
-  pending messages one at a time, in `n` order; `forward_due_at` is cleared when none remain.
+- Order is preserved: the Forwarder claims due payment rows (`FOR UPDATE SKIP LOCKED`, then a
+  one-minute lease on `forward_due_at`, committed before sending) and sends their pending messages one
+  at a time, in `n` order, stopping at the first that is not delivered. `forward_due_at` is the time
+  of the first pending message (its retry time, or now) and is cleared when none remain.
+- Payments are delivered in parallel on virtual threads; only 2xx counts as delivered.
+- With `jwe-public-key`, the body is a JWE (RSA-OAEP-256, A256GCM, `application/jose`); the signature
+  covers the JWE text.
 
 ## 9. Example: Razorpay purchase
 
