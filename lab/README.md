@@ -6,7 +6,8 @@ Reproducible attacks against a realistic merchant integration, run once **direct
 | Part | What it is | Port |
 |---|---|---|
 | [`mock-gateway`](mock-gateway) | Razorpay-compatible provider: orders, payments, signed webhooks and Checkout results | 8090 |
-| [`vulnshop`](vulnshop) | Reference merchant; each integration flaw F1–F10 is a switch (`shop.flaws`) | 8091 |
+| [`vulnshop`](vulnshop) | Reference merchant; each integration flaw F1–F10 is a switch (`shop.flaws`) | 8091 (direct), 8092 (behind Aegis) |
+| Aegis + PostgreSQL + Kafka | the system under test, configured by [`aegis.yaml`](aegis.yaml) | 8080 / 8081 |
 
 ```bash
 lab/run.sh            # build, start, run every attack, write lab/RESULTS.md (needs Docker, jq, openssl)
@@ -20,7 +21,10 @@ Every attack runs in each mode and is judged only by the shop's loss:
 |---|---|---|---|
 | `direct` | verifies provider messages itself | on | exploited |
 | `careful` | the same shop | off (control) | blocked |
-| `aegis` | behind Aegis (from M1) | on | blocked |
+| `aegis` | behind Aegis (same image, only URLs and credentials differ) | on | blocked |
+
+Then 100 legitimate payments (webhook and browser callback each) go through Aegis: every order must
+be fulfilled exactly once.
 
 Latest results: [RESULTS.md](RESULTS.md). CI runs the lab on every push.
 

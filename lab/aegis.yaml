@@ -1,0 +1,19 @@
+# Aegis in the Exploit Lab: the shop's Razorpay account (on the mock gateway) and the shop itself.
+# Lab-only fake secrets; nothing here is used outside the lab network.
+aegis:
+  connections:
+    razorpay:
+      adapter: razorpay
+      application: shop
+      base-url: http://mock-gateway:8090
+      settings:
+        key-id: rzp_test_aegis
+      secrets:
+        key-secret: [ "lab-aegis-key-secret-not-real-0002" ]
+        webhook: [ "lab-aegis-webhook-secret-not-real-02" ]
+  applications:
+    shop:
+      api-key: lab-shop-api-key-for-aegis-not-real-000001
+      signing-secret: lab-aegis-signing-secret-not-real-0001
+      forward-url: http://shop-aegis:8092/aegis/messages
+      return-url: http://shop-aegis:8092/aegis/return
