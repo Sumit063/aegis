@@ -32,6 +32,7 @@ class ArchitectureTest {
             .onlyDependOnClassesThat()
             .resideInAnyPackage(
                     "java..",
+                    "javax.crypto..",
                     "dev.aegis.domain..",
                     "dev.aegis.application..",
                     "dev.aegis.provider.spi..",
