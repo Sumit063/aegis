@@ -6,7 +6,9 @@
 |---|---|---|---|---|---|
 | Local / dev | `local` (laptop) · `dev` | `feature/*`, `dev` | Developer Mac, Docker via Colima | 8080 / 8081 | sandbox |
 | **Staging** | `staging` | `staging` | **Ubuntu host**, compose project `aegis-staging`, automatic deploy | 8180 / 8181 | sandbox |
-| Production | `prod` | `master` | No host yet — CI builds and publishes the image; deploy enabled when a host exists | 8080 / 8081 | **live** |
+| Production | `prod` | `master` | No host yet. CI builds and publishes the image; the CD job and the GitHub `production` environment are added when a host exists | 8080 / 8081 | **live** |
+
+GitHub shows only environments that have a machine: today that is `staging`.
 
 The staging host is isolated per environment by design (own PostgreSQL, Kafka, volumes, `.env`
 secrets, runtime configuration), so adding production later — on the same host or a new one — is

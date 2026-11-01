@@ -37,31 +37,51 @@ any provider. Each of those can change without touching the core.
 
 ## 2. Packages
 
+Familiar layers (controller, DTO, service, repository, entity) placed inside the hexagon, so each
+one has exactly one reason to change.
+
 ```
 aegis-service/src/main/java/dev/aegis/
-  domain/                 pure Java, no framework imports
-    shared/               value objects: Money, Ref
-    message/              PaymentMessage, MessageType, Outcome, Verdict, BlockReason
-    payment/              Validation, Payment (one payment and all its messages)
-    check/                Check, Checks (named rules), Gate (receive / permit): the only entry point
+  domain/                        pure Java, no framework imports
+    shared/                      value objects: Money, Ref
+    message/                     PaymentMessage, MessageType, Outcome, Verdict, BlockReason
+    payment/                     Validation, Payment (one row each, with its message entries)
+    check/                       Check rules, Checks, Gate (the single decision point)
   application/
-    port/in/              ReceiveMessageUseCase, HandleCallbackUseCase, SendOutboundUseCase, ForwardUseCase, AdminQueries
-    port/out/             IngressLogPort, ValidationRepository, PaymentRepository, ProviderClientPort,
-                          ForwardClientPort, EvidenceCipherPort, RuntimeConfigPort, ClockPort
-    service/              use-case implementations (transaction boundaries live here)
+    port/in/                     *UseCase interfaces + their command/result records
+    port/out/                    *Repository (storage) and *Port (Kafka, HTTP, crypto, clock)
+    service/                     *Service: use-case implementations, transaction boundaries
   provider/
-    spi/                  ProviderAdapter, ProviderRegistry, RawMessage, ParsedMessage, EnquiryLimits
-    razorpay/             M1
-    stripe/ paytm/ bbps/ upi/   later, one package each
+    spi/                         ProviderAdapter, RawMessage, ParsedMessage, SecretSet, registry
+    razorpay/                    M1; later stripe/, bbps/, upi/, one package each
   adapter/
-    in/web/               controllers, DTOs
-    in/kafka/             Checker consumer
-    in/scheduler/         Forwarder
-    out/persistence/      JPA entities, repositories, port implementations
-    out/kafka/            ingress log publisher
-    out/http/             provider client (mTLS), forward client
-    out/crypto/           AES-GCM evidence cipher, JWE, Aegis signing
-  config/                 typed properties, connections, applications, fail-closed validation
+    in/web/controller/           *Controller: ingress /in, Gateway API /gw, Admin /admin
+    in/web/dto/                  request/response records (the HTTP contract)
+    in/web/error/                exception → RFC 9457 problem response, in one place
+    in/web/security/             application key and client-certificate authentication
+    in/kafka/                    Checker consumer
+    in/scheduler/                Forwarder, retention
+    out/persistence/             *PersistenceAdapter: implements repository ports, maps rows ↔ domain
+    out/persistence/entity/      *Entity: JPA table mappings
+    out/persistence/repository/  Spring Data repositories (locking and ON CONFLICT queries)
+    out/kafka/                   ingress log publisher
+    out/http/                    provider client, forward client
+    out/crypto/                  AES-GCM evidence cipher, Aegis signer, JWE
+  config/                        typed properties, connections, applications, fail-closed validation
+
+lab/                             Exploit Lab (M0), separate Maven modules
+  mock-gateway/                  Razorpay-compatible provider
+  vulnshop/                      reference merchant with flaw switches F1–F10
+  attacks/                       one script per exploit; lab/run.sh writes lab/RESULTS.md
+```
+
+A request through the layers:
+
+```
+ HTTP ─► *Controller ─(dto → command)─► *UseCase ◄── *Service ─► Gate (domain)
+                                                        │
+                                                        ├─► *Repository ◄── *PersistenceAdapter ─► *Entity
+                                                        └─► *Port       ◄── Kafka / HTTP / crypto adapter
 ```
 
 ## 3. Dependency rules (enforced by ArchUnit on every build)
@@ -74,7 +94,7 @@ aegis-service/src/main/java/dev/aegis/
 | `provider.<x>` depends on `provider.spi` and `domain` only; never on another provider | Providers are plugins |
 | JPA (`jakarta.persistence`) only in `adapter.out.persistence` | Persistence model stays separate |
 | No package cycles | Keeps the graph understandable |
-| Controllers end in `Controller`, ports in `Port`/`UseCase`, adapters in `Adapter` | Predictable navigation |
+| Names and places: `*Controller` in `web.controller`, `*Service` in `application.service`, `*UseCase` in `port.in`, `*Port`/`*Repository` in `port.out`, `*Entity` in `persistence.entity`, Spring Data in `persistence.repository` | Predictable navigation; one place per kind of class |
 
 ## 4. SOLID, applied
 
