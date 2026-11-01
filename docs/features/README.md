@@ -48,7 +48,7 @@ From an external review of correctness, abuse resistance and recovery; each is o
 | H1 | Payment facts: explicit transitions, fact identity (partial refunds, reversals), unsupported events not forwarded | done |
 | H2 | Database-enforced identities: message IDs and business facts unique by constraint | done |
 | H3 | Abuse limits: bounded forgery quarantine, per-connection rate and concurrency limits, poison records to a dead-letter topic | done |
-| H4 | Callback and destinations: expiring, payment-bound signed results; destination URL policy (SSRF) | planned |
+| H4 | Callback and destinations: expiring, payment-bound signed results; destination URL policy (SSRF) | done |
 | H5 | Operations: correlation IDs through HTTP and Kafka, Kafka in readiness, recovery runbook, pipeline benchmark | planned |
 
 M2–M4 features are added here after the hardening batches.
