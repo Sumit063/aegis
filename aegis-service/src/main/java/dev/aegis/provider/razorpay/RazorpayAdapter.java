@@ -56,6 +56,7 @@ public final class RazorpayAdapter implements ProviderAdapter {
     static final String EVENT_ID = "X-Razorpay-Event-Id";
     private static final URI API = URI.create("https://api.razorpay.com");
     private static final JsonMapper JSON = JsonMapper.builder().build();
+    private static final long LATEST_SECOND = Instant.MAX.getEpochSecond();
 
     @Override
     public String id() {
@@ -141,8 +142,17 @@ public final class RazorpayAdapter implements ProviderAdapter {
         }
         JsonNode event = json(message.body());
         String name = event.path("event").asString("");
-        JsonNode payment = event.at("/payload/payment/entity");
-        JsonNode refund = event.at("/payload/refund/entity");
+        if (name.isEmpty()) {
+            throw new UnparseableMessageException("webhook without an event name");
+        }
+        // Every Razorpay webhook states when the event was created (seconds); freshness depends on it.
+        JsonNode created = event.path("created_at");
+        if (!created.isIntegralNumber()
+                || !created.canConvertToLong()
+                || created.asLong() <= 0
+                || created.asLong() > LATEST_SECOND) {
+            throw new UnparseableMessageException(name + " without a valid created_at");
+        }
         // Explicit allowlist. Anything else authenticated is OTHER: stored, acknowledged, never
         // forwarded as payment news (disputes and settlements included, until modelled).
         Outcome outcome = switch (name) {
@@ -152,27 +162,31 @@ public final class RazorpayAdapter implements ProviderAdapter {
             case "refund.processed" -> Outcome.REFUNDED;
             default -> Outcome.OTHER;
         };
-        if (name.isEmpty()) {
-            throw new UnparseableMessageException("webhook without an event name");
-        }
+        JsonNode payment = event.at("/payload/payment/entity");
+        JsonNode refund = event.at("/payload/refund/entity");
         Ref paymentId =
                 ref(payment.path("id").asString(refund.path("payment_id").asString(null)));
-        if (outcome != Outcome.OTHER && paymentId == null) {
-            throw new UnparseableMessageException(name + " without a payment");
-        }
-        Money amount = payment.has("amount") ? money(payment) : null;
+        Money amount = null;
         Ref factRef = null;
-        if (outcome == Outcome.REFUNDED) {
-            // Each refund is its own fact, identified by its refund ID, carrying the refunded amount.
-            factRef = ref(refund.path("id").asString(null));
-            if (factRef == null || !refund.path("amount").isIntegralNumber()) {
-                throw new UnparseableMessageException("refund.processed without refund id or amount");
+        switch (outcome) {
+            case SUCCESS, FAILED, PENDING -> {
+                // The payment entity always carries its amount and currency: without them the amount
+                // check could not run, so the event is not accepted.
+                if (paymentId == null) {
+                    throw new UnparseableMessageException(name + " without a payment");
+                }
+                amount = money(payment, "amount");
             }
-            amount = money(refund);
+            case REFUNDED -> {
+                // Each refund is its own fact, identified by its refund ID, carrying the refunded amount.
+                factRef = ref(refund.path("id").asString(null));
+                if (factRef == null || paymentId == null) {
+                    throw new UnparseableMessageException(name + " without refund id or payment");
+                }
+                amount = money(refund, "amount");
+            }
+            default -> {}
         }
-        Instant sentAt = event.has("created_at")
-                ? Instant.ofEpochSecond(event.get("created_at").asLong())
-                : null;
         return new PaymentMessage(
                 provider,
                 MessageType.WEBHOOK,
@@ -181,7 +195,7 @@ public final class RazorpayAdapter implements ProviderAdapter {
                 paymentId,
                 outcome,
                 amount,
-                sentAt,
+                Instant.ofEpochSecond(created.asLong()),
                 receivedAt,
                 factRef);
     }
@@ -247,21 +261,33 @@ public final class RazorpayAdapter implements ProviderAdapter {
             }
             return new Reply.Validated(true, orderId, money(body));
         }
-        Outcome outcome = switch (body.path("status").asString("")) {
+        // A status reply is the provider's observation of the payment now. After partial refunds the
+        // payment is still "captured" (a confirmation); "refunded" means fully refunded and states the
+        // cumulative amount, which is not a new refund fact (no refund identity).
+        String state = body.path("status").asString("");
+        Outcome outcome = switch (state) {
             case "captured" -> Outcome.SUCCESS;
             case "failed" -> Outcome.FAILED;
             case "created", "authorized" -> Outcome.PENDING;
             case "refunded" -> Outcome.REFUNDED;
             default -> Outcome.OTHER;
         };
+        Ref paymentId = ref(body.path("id").asString(null));
+        Money amount = null;
+        if (outcome != Outcome.OTHER) {
+            if (paymentId == null) {
+                throw new UnparseableMessageException("status reply without payment id");
+            }
+            amount = money(body, outcome == Outcome.REFUNDED ? "amount_refunded" : "amount");
+        }
         return new Reply.Payment(new PaymentMessage(
                 Ref.of(connection.name()),
                 MessageType.STATUS_CHECK,
                 Ref.of("status:" + UUID.randomUUID()),
                 ref(body.path("order_id").asString(null)),
-                ref(body.path("id").asString(null)),
+                paymentId,
                 outcome,
-                body.has("amount") ? money(body) : null,
+                amount,
                 null,
                 at));
     }
@@ -306,12 +332,22 @@ public final class RazorpayAdapter implements ProviderAdapter {
         }
     }
 
-    private static Money money(JsonNode node) {
-        try {
-            return Money.of(node.path("amount").asLong(), node.path("currency").asString("INR"));
-        } catch (IllegalArgumentException e) {
-            throw new UnparseableMessageException("bad amount or currency", e);
+    /** An integer amount in minor units and a currency code, both required: never defaulted. */
+    private static Money money(JsonNode node, String field) {
+        JsonNode amount = node.path(field);
+        JsonNode currency = node.path("currency");
+        if (!amount.isIntegralNumber() || !amount.canConvertToLong() || !currency.isString()) {
+            throw new UnparseableMessageException("missing or malformed " + field + " or currency");
         }
+        try {
+            return Money.of(amount.asLong(), currency.asString());
+        } catch (IllegalArgumentException e) {
+            throw new UnparseableMessageException("bad " + field + " or currency", e);
+        }
+    }
+
+    private static Money money(JsonNode node) {
+        return money(node, "amount");
     }
 
     private static Ref ref(String value) {

@@ -167,20 +167,23 @@ class AdminIT extends IntegrationTest {
         }
     }
 
+    /** Retention counts from the last activity, and never removes a delivery still due (H6). */
     @Test
-    void retentionDeletesOnlyOldRecords() {
+    void retentionDeletesOnlyRecordsInactiveForTheWholePeriod() {
         String recent = unique("pay_");
         String old = unique("pay_");
-        jdbc.update(
-                "insert into payments (provider, payment_ref, messages, created_at, updated_at) values ('razorpay', ?, '[]', now(), now())",
-                recent);
-        jdbc.update(
-                "insert into payments (provider, payment_ref, messages, created_at, updated_at) values ('razorpay', ?, '[]', now() - interval '200 days', now())",
-                old);
+        String oldButActive = unique("pay_");
+        String oldUndelivered = unique("pay_");
+        String insert = "insert into payments (provider, payment_ref, messages, created_at, updated_at, forward_due_at)"
+                + " values ('razorpay', ?, '[]', now() - ?::interval, now() - ?::interval, ?)";
+        jdbc.update(insert, recent, "0 days", "0 days", null);
+        jdbc.update(insert, old, "200 days", "181 days", null);
+        jdbc.update(insert, oldButActive, "200 days", "10 days", null);
+        jdbc.update(insert, oldUndelivered, "200 days", "181 days", java.sql.Timestamp.from(Instant.now()));
 
         String forged = "unverified-" + unique("x");
         jdbc.update(
-                "insert into payments (provider, messages, created_at, updated_at) values ('razorpay', ?::jsonb, now() - interval '8 days', now())",
+                "insert into payments (provider, messages, created_at, updated_at) values ('razorpay', ?::jsonb, now() - interval '8 days', now() - interval '8 days')",
                 "[{\"n\":1,\"messageId\":\"" + forged
                         + "\",\"type\":\"WEBHOOK\",\"outcome\":\"OTHER\",\"verdict\":\"BLOCKED\",\"reason\":\"BAD_SIGNATURE\",\"duplicates\":0,\"at\":\"2026-01-01T00:00:00Z\"}]");
 
@@ -189,10 +192,17 @@ class AdminIT extends IntegrationTest {
                         "select count(*) from payments where messages::text like ?", Integer.class, "%" + forged + "%"))
                 .as("rejected traffic is kept a week")
                 .isZero();
-
-        assertThat(jdbc.queryForObject("select count(*) from payments where payment_ref = ?", Integer.class, old))
-                .isZero();
-        assertThat(jdbc.queryForObject("select count(*) from payments where payment_ref = ?", Integer.class, recent))
+        assertThat(count(old)).isZero();
+        assertThat(count(recent)).isOne();
+        assertThat(count(oldButActive))
+                .as("a refund 10 days ago keeps the whole payment")
                 .isOne();
+        assertThat(count(oldUndelivered))
+                .as("a delivery still due is never purged")
+                .isOne();
+    }
+
+    private int count(String paymentRef) {
+        return jdbc.queryForObject("select count(*) from payments where payment_ref = ?", Integer.class, paymentRef);
     }
 }

@@ -247,6 +247,29 @@ purpose (self-hosted merchants).
   stable `id`; facts at most once by database keys. Exactly-once side effects need the receiver to
   dedupe by `id`; single-host disks need backups.
 
+### D29 — Required fields, clock skew, refunds as facts, exact guarantees
+Post-hardening review (HARDENING §13), each finding verified against the code first.
+- **Fail closed on provider fields.** An adapter rejects a message lacking a field its provider's
+  documented contract carries (Razorpay: `created_at`, payment `id`, integer `amount`, `currency`;
+  refund ID, amount, currency). Nothing is defaulted (a missing currency was `INR`). A field is
+  optional only where the protocol has none (the signed checkout callback carries no amount; the
+  order signature binds it to the validated order).
+- **Clock skew.** A timestamp more than the provider's skew ahead (SPI `maxClockSkew()`, default
+  5 min) is `FUTURE_TIMESTAMP`; the replay window is unchanged and both bounds are inclusive.
+- **Refunds are facts, not a state.** A payment's status is its lifecycle (PENDING, SUCCESS, FAILED,
+  REVERSED). Each identified refund is a fact on the captured payment; their sum ≤ paid; full means
+  equal. A status reply is an observation: "captured" confirms, "refunded" states the cumulative
+  amount and adds no refund.
+- **Guarantees per failure** (RUNBOOK §2): the single-broker profile survives restarts and power loss
+  (each message flushed before the ack) but not the loss of the broker's disk; the production profile
+  is three brokers, three replicas, two in sync (`aegis.kafka.*`). Deliveries retry 72 h, then are kept
+  for an operator.
+- **Retention by last activity**, never while a delivery is due; keys retire only after every retained
+  record and kept backup no longer needs them.
+- **Rejected:** allowing SUCCESS after REFUNDED (would accept a stale capture after a full refund as
+  news); making every amount mandatory in the domain (some protocols legitimately carry none; the
+  adapter knows which).
+
 ## Design review log
 
 | # | Issue | Fix |

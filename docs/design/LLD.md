@@ -52,19 +52,24 @@ Checker (Kafka consumer, one database transaction per message)
                    then INSERT payment row (provider, payment_ref) ON CONFLICT DO NOTHING; lock it
   8. repeat        message_id already in payment.messages → that entry's duplicates + 1, stop
   9. freshness     sent_at within the provider's window (Razorpay: 25 h)    → REPLAY
+                   sent_at beyond the provider's clock skew ahead (default 5 min) → FUTURE_TIMESTAMP
+                   (adapters require sent_at wherever the provider's protocol carries it)
      supported     outcome OTHER (an event Aegis does not interpret)        → UNSUPPORTED
  10. validated     a validation exists and was accepted                      → NO_VALIDATION
-     amount        message amount/currency (when present) = validation;
+     amount        message amount/currency = validation (adapters require them wherever the
+                   provider's contract carries them; only e.g. a signed callback has none);
                    refunds: their own amount, all refunds ≤ what was paid     → AMOUNT_MISMATCH
  11. paid elsewhere validation PAID by another payment: SUCCESS              → DUPLICATE_PAYMENT
                    (the customer paid twice; alerted, refund it), PENDING/FAILED → DOWNGRADE
  12. transition    explicit table (domain.check.Transitions), e.g. FAILED after SUCCESS →
-                   DOWNGRADE, refund before capture → INVALID_TRANSITION, SUCCESS after FAILED only
+                   DOWNGRADE, refund before capture → INVALID_TRANSITION (a refund is a fact on a
+                   captured payment, never a state), SUCCESS after FAILED only
                    if the provider documents late success (Razorpay does), the same fact again
                    (same outcome and fact_ref) → DUPLICATE; a status-check reply confirming the
                    current state is an answer, not a duplicate
  13. store         append the message to payment.messages with its verdict; if PASSED: set
-                   payment.status, set validation.status = PAID on SUCCESS, mark for forwarding
+                   payment.status (lifecycle only: refunds do not change it), set
+                   validation.status = PAID on SUCCESS, mark for forwarding
  14. commit DB, then commit the Kafka offset
 ```
 
@@ -111,7 +116,8 @@ on its own that a request has expired.
 | Reason | Where |
 |---|---|
 | `BAD_SIGNATURE` | inbound 3, outbound 6 |
-| `REPLAY` | inbound 7 |
+| `REPLAY` | inbound 9 |
+| `FUTURE_TIMESTAMP` | inbound 9 |
 | `NO_VALIDATION` | inbound 9, outbound 3 |
 | `AMOUNT_MISMATCH` | inbound 10, outbound 3 |
 | `DOWNGRADE` | inbound 11, 12 |
@@ -136,12 +142,15 @@ interface ProviderAdapter {                       // package dev.aegis.provider.
   Set<String> requiredSettings();                 // default none, e.g. [key-id]
   void validate(Connection c, boolean production);// default no-op, e.g. live keys only in prod
   Duration freshness();                           // replay window
+  Duration maxClockSkew();                        // default 5 min: how far ahead a timestamp may be
+  boolean lateSuccessAfterFailure();              // default false; Razorpay: true
   Check.Limits enquiryLimits();                   // default none; NPCI: wait 90 s, max 3 in 2 h
   // inbound
   RawMessage decrypt(Channel ch, RawMessage m, Connection c);   // default identity
   boolean verify(Channel ch, RawMessage m, Connection c);       // HMAC, checksum, XML-DSig, …
   PaymentMessage parse(Channel ch, RawMessage m, Connection c, Instant receivedAt);
-                                                  // throws UnparseableMessageException
+                                                  // throws UnparseableMessageException, also when a
+                                                  // field the provider's contract requires is missing
   Ack ack(Channel ch, RawMessage m);              // default 200; or <Ack/>
   // outbound, only for an application's request
   boolean supports(CallKind kind);                // default false; VALIDATION, PAY_REQUEST, STATUS_CHECK
@@ -158,7 +167,7 @@ holds the exact bytes and headers (case-insensitive lookup). Adapters are found 
 
 | Provider | verify | ack | Outcome mapping |
 |---|---|---|---|
-| Razorpay (M1) | HMAC-SHA256: webhook body with webhook secret; callback `order_id\|payment_id` with key secret | 2xx | `payment.captured`/`order.paid`→SUCCESS, `payment.failed`→FAILED, `payment.authorized`→PENDING, `refund.processed`→REFUNDED (amount not compared), others→OTHER; signed callback→SUCCESS |
+| Razorpay (M1) | HMAC-SHA256: webhook body with webhook secret; callback `order_id\|payment_id` with key secret | 2xx | `payment.captured`/`order.paid`→SUCCESS, `payment.failed`→FAILED, `payment.authorized`→PENDING, `refund.processed`→REFUNDED (refund ID, amount, currency required), others→OTHER; signed callback→SUCCESS (no amount: bound to the order by its signature). Required: integer `created_at`, payment `id`, integer `amount`, `currency` — never defaulted; an order request needs `receipt`, integer `amount` and `currency` (mandatory in the Orders API). Status reply: `captured`→SUCCESS (also after partial refunds), `refunded`→REFUNDED observation of `amount_refunded` (not a refund fact) |
 | Stripe (M2) | HMAC-SHA256 over `t.body`, 5-minute tolerance | 2xx | `payment_intent.succeeded`→SUCCESS, … |
 | Paytm-style (M2) | checksum with merchant key | 2xx | `TXN_SUCCESS`→SUCCESS, … |
 | BBPS / UPI (M3) | XML-DSig with the switch's public certificate | `<Ack/>` | SUCCESS / FAILURE / PENDING (deemed) / reversal |
@@ -191,8 +200,10 @@ CREATE TABLE payments (
   validation_id   bigint REFERENCES validations(id),  -- NULL: untrusted or unmatched message
   provider        text        NOT NULL,
   payment_ref     text,                          -- pay_Y / UPI txn id / BBPS txn ref; NULL if untrusted
-  status          text        CHECK (status IN ('PENDING','SUCCESS','FAILED','REFUNDED')),
-                                                 -- latest PASSED outcome; NULL if nothing passed
+  status          text        CHECK (status IN ('PENDING','SUCCESS','FAILED','REVERSED','REFUNDED')),
+                                                 -- lifecycle: latest PASSED state change (refunds are
+                                                 -- facts in messages, V3; REFUNDED only from an
+                                                 -- older version, read as SUCCESS); NULL if nothing passed
   messages        jsonb       NOT NULL DEFAULT '[]',  -- every message of this payment (below)
   forward_due_at  timestamptz,                   -- set while a passed message awaits forwarding
   created_at      timestamptz NOT NULL,
@@ -238,18 +249,20 @@ reply), `CALLBACK`, `WEBHOOK`, `ASYNC_RESPONSE`.
 | One row per payment | `UNIQUE (provider, payment_ref)`; created with `INSERT … ON CONFLICT DO NOTHING` |
 | Checks never race | The validation row is locked (`FOR UPDATE`) and the payment row is read and written in the same transaction; all checks read the locked rows |
 | Same message twice | `messageId` looked up in the locked row's `messages` |
-| Same fact twice | Payment `status` already equals the outcome |
+| Same fact twice | The same outcome and fact reference already passed (`payment_facts`) |
 | No downgrade | `validations.status = PAID` |
 | No double payment | `validations.status` must be `CREATED` and no payment of it `PENDING` |
 | No network call inside a transaction | Outbound: send first, then one transaction to store. The Checker never calls the network. |
 | Evidence is private | Every `body`, `request`, `reply` is AES-256-GCM ciphertext (`enc:v1:<key id>:<base64(iv ‖ ciphertext ‖ tag)>`); keys `aegis.evidence.keys`, `current` seals, all open |
 | Amount | Lives on the validation only; a payment's messages are compared with it |
 | Rows stay small | A payment has a handful of messages; repeats only increase a counter; bodies are capped (64 KB) |
-| Retention | 180 days (well beyond any freshness window, so a purged message can never replay); batched delete job |
+| Retention | 180 days after a record's **last activity** (`updated_at`), never while a delivery is due; untrusted rows 7 days (RUNBOOK §5); batched delete job |
 
 `validations.status` and `payments.status` are summaries for fast checks, not business workflows:
 `CREATED → PAID` (or `FAILED` when the provider rejected the validation); a payment's status is its
-latest passed outcome.
+lifecycle state. Refunds are facts on a captured payment: each identified refund passes once, their
+sum never exceeds the paid amount (partial while less, full when equal), and the payment stays
+`SUCCESS`, so a provider confirming "captured" after a partial refund is consistent.
 
 ## 8. Forwarding to the application
 

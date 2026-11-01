@@ -134,7 +134,10 @@ NPCI and BBPS sign with private keys, so a leak on the application side cannot f
 
 - Nothing reaches the application without passing every check.
 - Nothing is acknowledged to a provider before it is durably stored.
-- No passed message is lost: forwarding retries until the application acknowledges.
+- A passed message is delivered to the application at least once, always with the same `id`, retried
+  for 72 hours; after that it stays stored and an operator re-forwards it. It is never dropped.
+- What survives which failure (process restart, broker loss, disk loss, database loss, an application
+  down for longer than 72 h) is stated per failure in RUNBOOK §2; a single host is not disk-loss safe.
 - A fact (payment X succeeded) is forwarded once, whichever channel reports it first.
 - Aegis never initiates a call to a provider.
 
@@ -170,7 +173,7 @@ database. PostgreSQL enforces uniqueness and stores the records.
 |---|---|
 | Kafka down | Ingress returns an error, so the provider retries; nothing is acknowledged unstored |
 | PostgreSQL down | Checker pauses (messages wait in Kafka); outbound calls refused (fail closed) |
-| Application down | Forwarder retries; messages wait in the database |
+| Application down | Forwarder retries with backoff for 72 h; then the message is marked failed, alerted, kept and re-forwarded by an operator |
 | Provider down | Outbound call fails back to the application; Aegis does not retry it |
 | Aegis down | Providers retry their messages; outbound calls fail fast; money still moves |
 

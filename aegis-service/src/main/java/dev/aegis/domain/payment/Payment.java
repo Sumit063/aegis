@@ -20,8 +20,9 @@ import java.util.stream.Stream;
  * One payment (one provider transaction) and every message about it, in arrival order (one database
  * row, LLD §7). Entries are an append-only history: a later refund never erases the capture before it.
  *
- * <p>{@code status} is the payment's current state: the last state change that passed, or null if
- * none has. {@code id}, {@code validationId} and {@code paymentRef} are null for untrusted or
+ * <p>{@code status} is the payment's lifecycle state: PENDING, SUCCESS (captured), FAILED or REVERSED,
+ * the last of these that passed, or null if none has. Refunds are not a state: they are facts on a
+ * captured payment ({@link #refunded}), so a partial refund never hides the capture. {@code id}, {@code validationId} and {@code paymentRef} are null for untrusted or
  * unmatched messages.
  */
 public record Payment(Long id, Long validationId, Ref provider, Ref paymentRef, Outcome status, List<Entry> entries) {
@@ -141,11 +142,19 @@ public record Payment(Long id, Long validationId, Ref provider, Ref paymentRef, 
         return passed().anyMatch(e -> e.outcome() == Outcome.SUCCESS);
     }
 
-    /** The sum of refunds that passed, in {@code currency}. */
+    /**
+     * The sum of refund facts that passed, in {@code currency}: refunds the provider reported as news
+     * (webhooks, callbacks). A status reply's cumulative total is an observation, not another refund.
+     */
     public Money refunded(Currency currency) {
-        return passed().filter(e -> e.outcome() == Outcome.REFUNDED && e.amount() != null)
+        return passed().filter(e -> e.outcome() == Outcome.REFUNDED && e.type().forwarded() && e.amount() != null)
                 .map(Entry::amount)
                 .reduce(Money.zero(currency), Money::plus);
+    }
+
+    /** Partial refunds leave something of {@code paid}; a full refund leaves nothing. */
+    public boolean fullyRefunded(Money paid) {
+        return !paid.isGreaterThan(refunded(paid.currency()));
     }
 
     /** Whether a passed message already reported this outcome with this fact reference. */
@@ -163,8 +172,11 @@ public record Payment(Long id, Long validationId, Ref provider, Ref paymentRef, 
     }
 
     // The request's own acknowledgement is not news about the payment; only the provider's answers are.
+    // A refund is a fact on the captured payment, not a new state.
     private Outcome advance(PaymentMessage message) {
-        boolean news = message.outcome() != Outcome.OTHER && message.type() != MessageType.PAY_REQUEST;
+        boolean news = message.outcome() != Outcome.OTHER
+                && message.outcome() != Outcome.REFUNDED
+                && message.type() != MessageType.PAY_REQUEST;
         return news ? message.outcome() : status;
     }
 }

@@ -24,7 +24,9 @@ sending the webhook to the shop recording the fulfilment.
 
 Apple M5 (10 cores, 16 GB); Docker on Colima, 4 vCPU / 6 GB; every component in one VM: Aegis (one
 instance, all roles), PostgreSQL 17, Kafka 4.2 (one broker, `acks=all`, flush per message), mock
-gateway, two shops. Default Aegis settings except the lab's raised request limit (the limiter is
+gateway, two shops. This is the single-broker profile (RUNBOOK §2); the production durability
+profile (three brokers, two in sync) adds a replication round trip to each acknowledgement and was not
+measured here. Default Aegis settings except the lab's raised request limit (the limiter is
 tested separately in `LimitsIT`).
 
 ## Results

@@ -47,9 +47,17 @@ public interface ProviderAdapter {
         return false;
     }
 
+    /**
+     * How far ahead of Aegis's clock the provider's message timestamps may be. A later timestamp is
+     * blocked as {@code FUTURE_TIMESTAMP}.
+     */
+    default Duration maxClockSkew() {
+        return Policy.DEFAULT_CLOCK_SKEW;
+    }
+
     /** The provider behaviour the domain checks depend on. */
     default Policy policy() {
-        return new Policy(freshness(), lateSuccessAfterFailure());
+        return new Policy(freshness(), lateSuccessAfterFailure(), maxClockSkew());
     }
 
     /** The provider's status-check limits. */
@@ -73,8 +81,11 @@ public interface ProviderAdapter {
     /**
      * Reads a verified message into provider-neutral terms. Unknown event types map to
      * {@code Outcome.OTHER}; only the provider's final-success status maps to {@code SUCCESS}.
+     * Fails closed: a field the provider's documented contract requires for this event (amount,
+     * currency, timestamp, identities) that is missing, null or of the wrong type makes the message
+     * unparseable. Fields are optional only where the protocol does not carry them.
      *
-     * @throws UnparseableMessageException when the message cannot be read
+     * @throws UnparseableMessageException when the message cannot be read or lacks a required field
      */
     PaymentMessage parse(Channel channel, RawMessage message, Connection connection, Instant receivedAt);
 
