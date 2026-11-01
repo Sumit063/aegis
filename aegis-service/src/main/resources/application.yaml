@@ -61,3 +61,9 @@ info:
 
 aegis:
   roles: ${AEGIS_ROLES:ingress,checker,gateway,forwarder,admin}
+  evidence:
+    # Encrypts every stored message body. Rotate by adding a key and making it current; keep old
+    # keys until their data has passed retention.
+    current: k1
+    keys:
+      k1: ${AEGIS_EVIDENCE_KEY}

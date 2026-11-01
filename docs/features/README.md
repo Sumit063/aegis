@@ -29,7 +29,7 @@ Built in this order; each row is one branch and one PR.
 | F06 | Configuration: connections, applications, secrets, fail-closed validation | M1 | F00 | done |
 | F07 | Provider SPI, registry, contract test suite | M1 | F04, F06 | done |
 | F08 | Razorpay adapter | M1 | F07 | done |
-| F05 | Persistence: Flyway schema, entities, repositories, evidence encryption | M1 | F04, F06 | planned |
+| F05 | Persistence: Flyway schema, entities, repositories, evidence encryption | M1 | F04, F06 | done |
 | F09 | Ingress: signature, Kafka, acknowledgement | M1 | F05, F08 | planned |
 | F10 | Checker: inbound checks and verdicts | M1 | F09 | planned |
 | F11 | Browser callback and signed redirect | M1 | F10 | planned |

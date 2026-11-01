@@ -26,6 +26,7 @@ class ProfilesTest {
 
         assertThat(merged.getProperty("spring.datasource.password")).isEqualTo("${AEGIS_DB_PASSWORD}");
         assertThat(merged.getProperty("spring.datasource.url")).isEqualTo("${AEGIS_DB_URL}");
+        assertThat(merged.getProperty("aegis.evidence.keys.k1")).isEqualTo("${AEGIS_EVIDENCE_KEY}");
         assertThat(merged.stringPropertyNames())
                 .allSatisfy(key -> assertThat(merged.getProperty(key)).doesNotContain("local-only"));
     }
