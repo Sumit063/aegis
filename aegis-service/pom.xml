@@ -49,6 +49,12 @@
       <artifactId>spring-boot-starter-kafka</artifactId>
     </dependency>
 
+    <!-- Optional encryption of forwarded messages to the application's key (JWE) -->
+    <dependency>
+      <groupId>com.nimbusds</groupId>
+      <artifactId>nimbus-jose-jwt</artifactId>
+    </dependency>
+
     <!-- Operations -->
     <dependency>
       <groupId>org.springframework.boot</groupId>

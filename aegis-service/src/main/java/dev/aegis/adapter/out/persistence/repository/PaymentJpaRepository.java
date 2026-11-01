@@ -2,6 +2,7 @@ package dev.aegis.adapter.out.persistence.repository;
 
 import dev.aegis.adapter.out.persistence.entity.PaymentEntity;
 import jakarta.persistence.LockModeType;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -31,4 +32,20 @@ public interface PaymentJpaRepository extends JpaRepository<PaymentEntity, Long>
     Optional<PaymentEntity> findByProviderAndPaymentRef(String provider, String paymentRef);
 
     List<PaymentEntity> findByValidationIdOrderById(Long validationId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from PaymentEntity p where p.id = :id")
+    Optional<PaymentEntity> lockById(@Param("id") Long id);
+
+    /**
+     * Due payments for the Forwarder. {@code SKIP LOCKED} lets several instances take different rows
+     * at once without waiting on each other (Competing Consumers).
+     */
+    @Query(value = """
+                    SELECT * FROM payments
+                    WHERE forward_due_at <= :now
+                    ORDER BY forward_due_at
+                    LIMIT :limit
+                    FOR UPDATE SKIP LOCKED""", nativeQuery = true)
+    List<PaymentEntity> lockDue(@Param("now") Instant now, @Param("limit") int limit);
 }
