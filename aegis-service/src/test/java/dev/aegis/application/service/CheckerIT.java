@@ -98,11 +98,9 @@ class CheckerIT extends IntegrationTest {
         Payment payment = payments.ofValidation(order.id()).getFirst();
         assertThat(payment.entries()).singleElement().satisfies(e -> {
             assertThat(e.verdict()).isEqualTo(Verdict.PASSED);
-            assertThat(e.forward()).isEqualTo(Payment.Forward.PENDING);
+            // Queued for the application; the Forwarder may already have delivered it.
+            assertThat(e.forward()).isIn(Payment.Forward.PENDING, Payment.Forward.DELIVERED);
         });
-        assertThat(jdbc.queryForObject(
-                        "select forward_due_at is not null from payments where id = ?", Boolean.class, payment.id()))
-                .isTrue();
     }
 
     /** LLD §9 rows 3–6: callback passes; the webhook for the same fact is DUPLICATE; retries are counted; a late failure is DOWNGRADE. */

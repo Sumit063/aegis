@@ -5,8 +5,12 @@ import dev.aegis.application.port.out.DirectoryPort;
 import dev.aegis.application.port.out.EvidenceCipherPort;
 import dev.aegis.application.port.out.IngressLogPort;
 import dev.aegis.application.port.out.IngressRecord;
+import dev.aegis.application.port.out.MetricsPort;
+import dev.aegis.domain.message.MessageType;
+import dev.aegis.domain.message.Verdict;
 import dev.aegis.provider.spi.Connection;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -54,6 +58,18 @@ final class Fakes {
         public byte[] open(String sealed) {
             return sealed.substring("sealed:".length()).getBytes(StandardCharsets.UTF_8);
         }
+    };
+
+    /** Metrics that go nowhere. */
+    static final MetricsPort METRICS = new MetricsPort() {
+        @Override
+        public void verdict(String provider, MessageType type, Verdict verdict, boolean repeat) {}
+
+        @Override
+        public void acknowledged(String provider, boolean verified, Duration took) {}
+
+        @Override
+        public void forwarded(String application, boolean delivered, boolean gaveUp) {}
     };
 
     static final class IngressLog implements IngressLogPort {

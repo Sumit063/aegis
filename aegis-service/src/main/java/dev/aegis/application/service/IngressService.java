@@ -7,6 +7,7 @@ import dev.aegis.application.port.out.DirectoryPort;
 import dev.aegis.application.port.out.EvidenceCipherPort;
 import dev.aegis.application.port.out.IngressLogPort;
 import dev.aegis.application.port.out.IngressRecord;
+import dev.aegis.application.port.out.MetricsPort;
 import dev.aegis.domain.message.PaymentMessage;
 import dev.aegis.provider.spi.Channel;
 import dev.aegis.provider.spi.Connection;
@@ -14,6 +15,7 @@ import dev.aegis.provider.spi.ProviderAdapter;
 import dev.aegis.provider.spi.ProviderRegistry;
 import dev.aegis.provider.spi.RawMessage;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -34,6 +36,7 @@ public class IngressService implements ReceiveProviderMessageUseCase {
     private final ProviderRegistry providers;
     private final IngressLogPort ingressLog;
     private final EvidenceCipherPort cipher;
+    private final MetricsPort metrics;
     private final Clock clock;
 
     public IngressService(
@@ -41,11 +44,13 @@ public class IngressService implements ReceiveProviderMessageUseCase {
             ProviderRegistry providers,
             IngressLogPort ingressLog,
             EvidenceCipherPort cipher,
+            MetricsPort metrics,
             Clock clock) {
         this.directory = directory;
         this.providers = providers;
         this.ingressLog = ingressLog;
         this.cipher = cipher;
+        this.metrics = metrics;
         this.clock = clock;
     }
 
@@ -76,6 +81,7 @@ public class IngressService implements ReceiveProviderMessageUseCase {
             }
             throw new UnavailableException("ingress log unavailable", e);
         }
+        metrics.acknowledged(connection.name(), verified, Duration.between(receivedAt, clock.instant()));
         if (!verified) {
             log.warn("bad signature on {} ({})", connection.name(), channel);
             return new Receipt(false, null);

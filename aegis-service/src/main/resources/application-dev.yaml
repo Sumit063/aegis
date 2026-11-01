@@ -1,6 +1,10 @@
 # Shared development environment (branch `dev`). Gateway sandbox/test keys only.
 # Every credential comes from the environment's .env on its host; nothing has a default.
 logging:
+  # One JSON object per line (ECS), so logs are searchable by reference.
+  structured:
+    format:
+      console: ecs
   level:
     dev.aegis: DEBUG
 

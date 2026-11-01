@@ -1,0 +1,20 @@
+# Optional overlay: Prometheus (alerts from deploy/observability/alerts.yml) and Grafana, bound to
+# 127.0.0.1 like everything else. Add it to an environment's compose command when needed:
+#   docker compose -f compose.yaml -f compose.observability.yaml up -d
+services:
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    restart: unless-stopped
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+
+  grafana:
+    image: grafana/grafana:13.2.5
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
