@@ -52,6 +52,19 @@ class FailureIT extends IntegrationTest {
                 .statusCode();
     }
 
+    @org.springframework.beans.factory.annotation.Value("${local.management.port}")
+    int managementPort;
+
+    private int readiness() throws Exception {
+        return http.send(
+                        HttpRequest.newBuilder(
+                                        URI.create("http://127.0.0.1:" + managementPort + "/actuator/health/readiness"))
+                                .timeout(Duration.ofSeconds(10))
+                                .build(),
+                        HttpResponse.BodyHandlers.discarding())
+                .statusCode();
+    }
+
     private static void pause(GenericContainer<?> container) {
         container
                 .getDockerClient()
@@ -75,13 +88,17 @@ class FailureIT extends IntegrationTest {
 
         pause(KAFKA);
         int during;
+        int readiness;
         try {
             during = webhook(body);
+            readiness = readiness();
         } finally {
             resume(KAFKA);
         }
 
         assertThat(during).isEqualTo(503);
+        assertThat(readiness).as("not ready while Kafka is down").isEqualTo(503);
+        await().atMost(Duration.ofSeconds(30)).until(() -> readiness() == 200);
         await().atMost(Duration.ofSeconds(30))
                 .pollInterval(Duration.ofSeconds(1))
                 .until(() -> webhook(body) == 200);
