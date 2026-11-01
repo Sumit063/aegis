@@ -20,7 +20,9 @@ other provider.
    - outbound calls Aegis proxies, their authentication, and status-check limits.
 2. **Create** `provider/<name>/` with a `<Name>Adapter` implementing `ProviderAdapter`; unused parts
    keep the SPI defaults. Provider DTOs never leave the package.
-3. **Register** the bean; add a connection to the configuration with fail-closed secret validation.
+3. **Register** the class in `src/main/resources/META-INF/services/dev.aegis.provider.spi.ProviderAdapter`
+   (ServiceLoader; adapters are plain Java, never Spring beans); add a connection to the
+   environment's `aegis.yaml`. `ProviderRegistry` refuses to start without its required secrets.
 4. **Tests:**
    - `<Name>ContractTest` extending the shared SPI contract suite,
    - signature vectors (valid, tampered body, wrong secret, empty secret, rotated secret),
