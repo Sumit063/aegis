@@ -89,12 +89,10 @@ public class CheckService implements CheckMessageUseCase {
             return untrusted(connection, record, BlockReason.UNPARSEABLE, evidence);
         }
 
-        Validation validation = parsed.providerRef() == null
-                ? null
-                : validations.lock(parsed.provider(), parsed.providerRef()).orElse(null);
+        Validation validation = validationOf(parsed);
         Payment payment = payments.lockOrCreate(
                 parsed.provider(), parsed.paymentRef(), validation == null ? null : validation.id());
-        Gate.Result result = Gate.receive(parsed, validation, payment, clock.instant(), adapter.freshness());
+        Gate.Result result = Gate.receive(parsed, validation, payment, clock.instant(), adapter.policy());
 
         if (result.validation() != null && !result.validation().equals(validation)) {
             validations.update(result.validation());
@@ -113,6 +111,23 @@ public class CheckService implements CheckMessageUseCase {
                 stored.id(),
                 validation == null ? null : validation.merchantRef().value(),
                 result.repeat());
+    }
+
+    /**
+     * The validation a message is about, locked: by the provider reference it names, or (a refund
+     * names only its payment) through the payment Aegis already linked to a validation. Always
+     * locked before the payment, so concurrent checks never deadlock.
+     */
+    private Validation validationOf(PaymentMessage message) {
+        if (message.providerRef() != null) {
+            return validations.lock(message.provider(), message.providerRef()).orElse(null);
+        }
+        if (message.paymentRef() != null) {
+            return payments.validationIdOf(message.provider(), message.paymentRef())
+                    .flatMap(validations::lock)
+                    .orElse(null);
+        }
+        return null;
     }
 
     private Result untrusted(Connection connection, IngressRecord record, BlockReason reason, Evidence evidence) {

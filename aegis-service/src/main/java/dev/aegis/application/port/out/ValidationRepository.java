@@ -20,6 +20,9 @@ public interface ValidationRepository {
 
     Optional<Validation> find(long id);
 
+    /** Locks a validation by its ID (when a message names the payment, not the validation). */
+    Optional<Validation> lock(long id);
+
     /** Validations whose merchant or provider reference is {@code ref}. */
     List<Validation> findByRef(String ref);
 

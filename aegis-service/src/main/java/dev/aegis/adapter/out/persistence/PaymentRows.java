@@ -7,6 +7,7 @@ import dev.aegis.domain.message.MessageType;
 import dev.aegis.domain.message.Outcome;
 import dev.aegis.domain.message.Verdict;
 import dev.aegis.domain.payment.Payment;
+import dev.aegis.domain.shared.Money;
 import dev.aegis.domain.shared.Ref;
 import java.util.ArrayList;
 import java.util.List;
@@ -90,7 +91,10 @@ class PaymentRows {
                 kept.body(),
                 kept.reply(),
                 kept.httpStatus() == 0 ? null : kept.httpStatus(),
-                StoredEntry.Forward.of(entry.forward().name()));
+                StoredEntry.Forward.of(entry.forward().name()),
+                entry.amount() == null ? null : entry.amount().minorUnits(),
+                entry.amount() == null ? null : entry.amount().currency().getCurrencyCode(),
+                entry.factRef() == null ? null : entry.factRef().value());
     }
 
     private static Payment.Entry entry(StoredEntry stored) {
@@ -107,6 +111,8 @@ class PaymentRows {
                 Outcome.valueOf(stored.outcome()),
                 verdict,
                 stored.duplicates(),
-                forward);
+                forward,
+                stored.amount() == null ? null : Money.of(stored.amount(), stored.currency()),
+                stored.factRef() == null ? null : Ref.of(stored.factRef()));
     }
 }
