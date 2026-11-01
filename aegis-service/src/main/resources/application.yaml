@@ -49,4 +49,4 @@ info:
   environment: ${aegis.environment}
 
 aegis:
-  roles: ${AEGIS_ROLES:ingress,verify,processor,deliverer,admin}
+  roles: ${AEGIS_ROLES:ingress,checker,gateway,forwarder,admin}

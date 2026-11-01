@@ -1,15 +1,15 @@
 package dev.aegis.config;
 
-/** A role this process runs. One deployable, started with any combination of roles (HLD §5). */
+/** A role this process runs. One deployable, started with any combination of roles (HLD §7). */
 public enum Role {
-    /** Public webhook endpoint: authenticate, write to the claim log, acknowledge. */
+    /** Public provider endpoints: transport and signature checks, write to Kafka, acknowledge. */
     INGRESS,
-    /** Internal checkout-verification API (Route A). */
-    VERIFY,
-    /** Claim consumer, confirmation and recheck workers. */
-    PROCESSOR,
-    /** Delivery worker: signed notifications to merchant backends. */
-    DELIVERER,
+    /** Kafka consumer: inbound checks and verdicts; also serves browser callbacks. */
+    CHECKER,
+    /** Internal API for application-initiated provider calls: validations, payments, status checks. */
+    GATEWAY,
+    /** Delivers passed messages to applications over mTLS, signed, with retries. */
+    FORWARDER,
     /** Internal investigation and operations API. */
     ADMIN
 }
