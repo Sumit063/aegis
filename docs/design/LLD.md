@@ -265,7 +265,9 @@ Content-Type: application/json            (or application/jose when JWE is enabl
 
 ## 11. Configuration
 
-Connections are defined in the profile YAML; secrets come only from environment variables.
+Connections and applications are declared per environment in `aegis.yaml` (next to `.env` on the
+host, template `deploy/aegis.example.yaml`, mounted read-only). Secret values are `${ENV}`
+placeholders, so secrets come only from environment variables.
 
 ```yaml
 aegis:
@@ -273,18 +275,24 @@ aegis:
     razorpay:
       adapter: razorpay
       application: shop
-      secrets: { api-key-id: ${RZP_KEY_ID}, api-key-secret: ${RZP_KEY_SECRET},
-                 webhook: [ "${RZP_WEBHOOK_SECRET}", "${RZP_WEBHOOK_SECRET_PREVIOUS:}" ] }
+      base-url: https://api.razorpay.com
+      settings: { key-id: ${RZP_KEY_ID} }
+      secrets:
+        key-secret: [ "${RZP_KEY_SECRET}" ]
+        webhook: [ "${RZP_WEBHOOK_SECRET}", "${RZP_WEBHOOK_SECRET_PREVIOUS:}" ]   # newest first
   applications:
     shop:
+      api-key: ${SHOP_AEGIS_API_KEY}
+      signing-secret: ${SHOP_AEGIS_SECRET}
       forward-url: https://shop.internal/aegis/messages
       return-url: https://shop.example/payment/result
       client-cert-subject: CN=shop
-      signing-secret: ${SHOP_AEGIS_SECRET}
       jwe-public-key: ${SHOP_JWE_PUBLIC_KEY:}
 ```
 
-- Startup fails on missing, empty or short (< 32 bytes) secrets. Empty "previous" slots are dropped.
+- Startup fails on a missing or empty secret, a provider secret shorter than 16 characters, an
+  application secret shorter than 32, or a connection naming an unknown application. Empty
+  "previous" slots are dropped. Signing uses the first secret of a list; verification accepts any.
 - Runtime-tunable values (forwarding backoff, pause per application, log levels) live in `config`.
   Each instance keeps an in-memory snapshot, refreshed by `LISTEN/NOTIFY` plus a 30 s poll.
 - Profiles (`local`, `dev`, `staging`, `prod`): see DECISIONS D9.

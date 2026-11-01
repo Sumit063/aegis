@@ -3,6 +3,10 @@
 spring:
   application:
     name: aegis
+  config:
+    # Connections and applications of this environment (deploy/aegis.example.yaml). Optional, so a
+    # fresh environment starts with none; secrets inside it are ${ENV} placeholders.
+    import: optional:file:${AEGIS_CONFIG:/config/aegis.yaml}
   profiles:
     # A laptop with no profile set runs as `local`. Servers always set SPRING_PROFILES_ACTIVE.
     default: local

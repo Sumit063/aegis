@@ -132,6 +132,11 @@ before code.
 ### D17 — Secrets: fail-closed and rotatable
 Missing, empty or short secrets stop startup; empty optional slots are dropped, never treated as an
 empty key (CVE-2026-41432). Secret lists (current + previous) allow rotation without downtime.
+- Minimums: provider secrets 16 characters (Razorpay key secrets are 24, so 32 would reject real
+  keys), secrets Aegis shares with applications 32 (they are generated).
+- Secrets are a type (`Secret`) that never prints its value and compares in constant time.
+- Connections live in a per-environment `aegis.yaml` with `${ENV}` placeholders, because nested maps
+  do not map cleanly to environment variables; the secrets themselves stay in `.env`.
 
 ### D18 — Leaked shared secrets: accepted residual risk
 A passive gateway cannot detect a correctly signed message made with a stolen HMAC secret.
