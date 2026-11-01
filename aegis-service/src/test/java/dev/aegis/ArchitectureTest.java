@@ -37,8 +37,10 @@ class ArchitectureTest {
                     "dev.aegis.provider.spi..",
                     "org.springframework.stereotype..",
                     "org.springframework.transaction.annotation..",
+                    "org.springframework.transaction.support..",
+                    "org.slf4j..",
                     "org.jspecify.annotations..")
-            .as("application depends only on domain, provider SPI and transaction annotations");
+            .as("application depends only on domain, provider SPI, transaction annotations and logging");
 
     @ArchTest
     static final ArchRule providersArePlugins = noClasses()
