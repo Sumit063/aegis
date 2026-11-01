@@ -82,6 +82,9 @@ info:
 
 aegis:
   roles: ${AEGIS_ROLES:ingress,checker,gateway,forwarder,admin}
+  admin:
+    # Operators' key for /admin/** (generated per environment by deploy.sh).
+    api-key: ${AEGIS_ADMIN_API_KEY}
   evidence:
     # Encrypts every stored message body. Rotate by adding a key and making it current; keep old
     # keys until their data has passed retention.

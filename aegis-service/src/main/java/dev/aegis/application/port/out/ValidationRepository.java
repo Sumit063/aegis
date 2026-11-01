@@ -3,6 +3,7 @@ package dev.aegis.application.port.out;
 import dev.aegis.domain.payment.Validation;
 import dev.aegis.domain.shared.Ref;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 /** Storage of validations: one row each, holding the whole call (LLD §7). */
@@ -18,6 +19,9 @@ public interface ValidationRepository {
     Optional<Validation> lock(Ref provider, Ref providerRef);
 
     Optional<Validation> find(long id);
+
+    /** Validations whose merchant or provider reference is {@code ref}. */
+    List<Validation> findByRef(String ref);
 
     /** Persists a status change (e.g. PAID). */
     void update(Validation validation);

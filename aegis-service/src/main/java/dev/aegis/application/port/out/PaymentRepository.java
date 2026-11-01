@@ -2,6 +2,7 @@ package dev.aegis.application.port.out;
 
 import dev.aegis.domain.payment.Payment;
 import dev.aegis.domain.shared.Ref;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -19,6 +20,12 @@ public interface PaymentRepository {
 
     /** Locks the row for this payment reference if it exists. */
     Optional<Payment> lock(Ref provider, Ref paymentRef);
+
+    /** Payments with this payment reference, or belonging to a validation with this merchant/provider reference. */
+    List<Payment> findByRef(String ref);
+
+    /** Payments with a blocked message, changed since {@code since}, newest first. */
+    List<Payment> blockedSince(Instant since, int limit);
 
     /** The payments of a validation, to check for one still in flight. */
     List<Payment> ofValidation(long validationId);

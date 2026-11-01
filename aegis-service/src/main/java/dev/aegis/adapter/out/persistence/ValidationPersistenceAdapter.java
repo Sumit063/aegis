@@ -10,6 +10,7 @@ import dev.aegis.domain.shared.Money;
 import dev.aegis.domain.shared.Ref;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
@@ -68,6 +69,13 @@ class ValidationPersistenceAdapter implements ValidationRepository {
     @Override
     public Optional<Validation> find(long id) {
         return rows.findById(id).map(ValidationPersistenceAdapter::toDomain);
+    }
+
+    @Override
+    public List<Validation> findByRef(String ref) {
+        return rows.findTop100ByMerchantRefOrProviderRefOrderByIdDesc(ref, ref).stream()
+                .map(ValidationPersistenceAdapter::toDomain)
+                .toList();
     }
 
     @Override

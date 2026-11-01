@@ -62,6 +62,18 @@ class PaymentPersistenceAdapter implements PaymentRepository {
     }
 
     @Override
+    public List<Payment> findByRef(String ref) {
+        return rows.findByRef(ref).stream().map(mapper::toDomain).toList();
+    }
+
+    @Override
+    public List<Payment> blockedSince(Instant since, int limit) {
+        return rows.findBlockedSince(since, limit).stream()
+                .map(mapper::toDomain)
+                .toList();
+    }
+
+    @Override
     public List<Payment> ofValidation(long validationId) {
         return rows.findByValidationIdOrderById(validationId).stream()
                 .map(mapper::toDomain)
