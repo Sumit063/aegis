@@ -16,6 +16,11 @@ public final class TestClock extends Clock {
         offset.updateAndGet(current -> current.plus(by));
     }
 
+    /** Back to real time; tests that move the clock call this when they finish. */
+    public void reset() {
+        offset.set(Duration.ZERO);
+    }
+
     @Override
     public Instant instant() {
         return Instant.now().plus(offset.get());
