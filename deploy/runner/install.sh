@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs the deploy runner on the production host, as the unprivileged deploy user.
+# Installs the deploy runner on the host, as the unprivileged deploy user.
 #   RUNNER_TOKEN=<registration token> deploy/runner/install.sh <owner/repo>
 # Get a token with: gh api -X POST repos/<owner/repo>/actions/runners/registration-token --jq .token
 set -euo pipefail

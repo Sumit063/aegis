@@ -1,9 +1,9 @@
 name: CD
 
-# Where each branch runs:
-#   dev     → developer machines (local/dev profile); CI only, no server deploy
-#   staging → the Ubuntu host (automatic deploy, below)
-#   master  → production; CI builds the image, deploy enabled once a production host exists
+# Deploys the only environment with a machine today: staging, on the Ubuntu host.
+#   dev    → developer machines; CI only
+#   master → production; CI builds and publishes the image. A production deploy (and its GitHub
+#            environment) is added here when a production host exists.
 on:
   workflow_run:
     workflows: [CI]
@@ -26,18 +26,18 @@ permissions:
 
 jobs:
   deploy:
-    name: Deploy to ${{ github.event.inputs.environment || (github.event.workflow_run.head_branch == 'master' && 'prod') || github.event.workflow_run.head_branch }}
+    name: Deploy to staging
     # Only successful CI runs triggered by a push; never pull-request code.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
-    runs-on: [self-hosted, aegis-production]
-    environment: ${{ github.event.inputs.environment || (github.event.workflow_run.head_branch == 'master' && 'prod') || github.event.workflow_run.head_branch }}
+    runs-on: [self-hosted, aegis-host]
+    environment: staging
     concurrency:
-      group: deploy-${{ github.event.inputs.environment || github.event.workflow_run.head_branch }}
+      group: deploy-staging
       cancel-in-progress: false
     env:
-      TARGET: ${{ github.event.inputs.environment || (github.event.workflow_run.head_branch == 'master' && 'prod') || github.event.workflow_run.head_branch }}
+      TARGET: staging
       TAG: ${{ github.event.inputs.tag || github.event.workflow_run.head_sha }}
     steps:
       - uses: actions/checkout@v7
