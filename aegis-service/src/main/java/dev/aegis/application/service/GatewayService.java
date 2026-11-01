@@ -8,6 +8,7 @@ import dev.aegis.application.port.in.UnknownConnectionException;
 import dev.aegis.application.port.out.DirectoryPort;
 import dev.aegis.application.port.out.Evidence;
 import dev.aegis.application.port.out.EvidenceCipherPort;
+import dev.aegis.application.port.out.MetricsPort;
 import dev.aegis.application.port.out.PaymentRepository;
 import dev.aegis.application.port.out.ProviderClientPort;
 import dev.aegis.application.port.out.ValidationRepository;
@@ -61,6 +62,7 @@ public class GatewayService implements GatewayUseCase {
     private final ValidationRepository validations;
     private final PaymentRepository payments;
     private final EvidenceCipherPort cipher;
+    private final MetricsPort metrics;
     private final TransactionTemplate tx;
     private final Clock clock;
 
@@ -71,6 +73,7 @@ public class GatewayService implements GatewayUseCase {
             ValidationRepository validations,
             PaymentRepository payments,
             EvidenceCipherPort cipher,
+            MetricsPort metrics,
             TransactionTemplate tx,
             Clock clock) {
         this.directory = directory;
@@ -79,6 +82,7 @@ public class GatewayService implements GatewayUseCase {
         this.validations = validations;
         this.payments = payments;
         this.cipher = cipher;
+        this.metrics = metrics;
         this.tx = tx;
         this.clock = clock;
     }
@@ -100,11 +104,19 @@ public class GatewayService implements GatewayUseCase {
         } catch (UnparseableMessageException e) {
             throw new BadRequestException(e.getMessage());
         }
-        return switch (kind) {
+        Answer answer = switch (kind) {
             case VALIDATION -> validate(connection, adapter, request, facts);
             case PAY_REQUEST -> pay(connection, adapter, request, facts);
             case STATUS_CHECK -> checkStatus(connection, adapter, request, facts);
         };
+        if (kind != CallKind.VALIDATION) {
+            metrics.verdict(
+                    connection.name(),
+                    kind == CallKind.PAY_REQUEST ? MessageType.PAY_REQUEST : MessageType.STATUS_CHECK,
+                    answer.verdict(),
+                    false);
+        }
+        return answer;
     }
 
     private Answer validate(Connection connection, ProviderAdapter adapter, RawMessage request, CallFacts facts) {
