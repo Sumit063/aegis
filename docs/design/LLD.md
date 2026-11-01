@@ -65,7 +65,9 @@ pass. Unknown connection → 404. An adapter that cannot parse a signed message 
 
 **Browser callback** (`/in/{connection}/callback`) runs steps 1–13 inline (no Kafka). The customer is
 waiting and the browser retries nothing. It then redirects (`303`) to the application's return URL
-with `ref`, `verdict` and an Aegis signature over both.
+with `ref` (the validation's merchant reference), `verdict` and
+`signature = hex(HMAC_SHA256(app_secret, ref + "." + verdict))`. The page is display only; the
+application acts on the forwarded message.
 
 ## 4. Outbound pipeline (application-initiated only)
 
