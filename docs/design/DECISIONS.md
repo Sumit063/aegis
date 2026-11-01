@@ -164,6 +164,15 @@ Integer minor units + ISO currency, never floats; database identity keys; `times
 - A webhook without `X-Razorpay-Event-Id` gets the ID `body:<sha256 of body>`, so a replay of the
   same bytes is still the same message.
 
+### D22 — JSON fields as text, mapped by the adapter
+`validations.data` and `payments.messages` are `jsonb` columns mapped as `String` and (de)serialised
+by the persistence adapter with Jackson into explicit stored records.
+- **Why:** the stored shape is visible in one place and can evolve with a version; the domain sees
+  only what checks need (no evidence, no delivery history); no dependency on Hibernate's JSON
+  format-mapper integration.
+- `payments` has no amount columns: the authority's amount is the validation's.
+- Evidence keys are generated on the host (`AEGIS_EVIDENCE_KEY` in `.env`) and never leave it.
+
 ## Design review log
 
 | # | Issue | Fix |

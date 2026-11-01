@@ -172,8 +172,6 @@ CREATE TABLE payments (
   validation_id   bigint REFERENCES validations(id),  -- NULL: untrusted or unmatched message
   provider        text        NOT NULL,
   payment_ref     text,                          -- pay_Y / UPI txn id / BBPS txn ref; NULL if untrusted
-  amount          bigint,
-  currency        char(3),
   status          text        CHECK (status IN ('PENDING','SUCCESS','FAILED','REFUNDED')),
                                                  -- latest PASSED outcome; NULL if nothing passed
   messages        jsonb       NOT NULL DEFAULT '[]',  -- every message of this payment (below)
@@ -201,7 +199,7 @@ CREATE TABLE config (
 ```json
 [ { "n": 1, "type": "CALLBACK", "messageId": "cb:pay_Y", "at": "…", "outcome": "SUCCESS",
     "verdict": "PASSED", "headers": {…}, "body": "enc:v1:…",
-    "forward": { "status": "DELIVERED", "attempts": 1, "at": "…" } },
+    "forward": { "status": "DELIVERED", "attempts": 1, "firstAt": "…", "lastAt": "…", "nextAt": null } },
   { "n": 2, "type": "WEBHOOK", "messageId": "evt_123", "at": "…", "outcome": "SUCCESS",
     "verdict": "BLOCKED", "reason": "DUPLICATE", "duplicates": 3, "headers": {…}, "body": "enc:v1:…" },
   { "n": 3, "type": "STATUS_CHECK", "messageId": "aegis:…", "at": "…", "outcome": "SUCCESS",
@@ -219,7 +217,8 @@ reply), `CALLBACK`, `WEBHOOK`, `ASYNC_RESPONSE`.
 | No downgrade | `validations.status = PAID` |
 | No double payment | `validations.status` must be `CREATED` and no payment of it `PENDING` |
 | No network call inside a transaction | Outbound: send first, then one transaction to store. The Checker never calls the network. |
-| Evidence is private | Every `body`, `request`, `reply` is AES-256-GCM ciphertext (`enc:v1:` + key id, for rotation) |
+| Evidence is private | Every `body`, `request`, `reply` is AES-256-GCM ciphertext (`enc:v1:<key id>:<base64(iv ‖ ciphertext ‖ tag)>`); keys `aegis.evidence.keys`, `current` seals, all open |
+| Amount | Lives on the validation only; a payment's messages are compared with it |
 | Rows stay small | A payment has a handful of messages; repeats only increase a counter; bodies are capped (64 KB) |
 | Retention | 180 days (well beyond any freshness window, so a purged message can never replay); batched delete job |
 

@@ -62,6 +62,7 @@ services:
       AEGIS_DB_PASSWORD: ${POSTGRES_PASSWORD:-aegis-local-only}
       AEGIS_KAFKA_BOOTSTRAP: kafka:29092
       AEGIS_ROLES: ${AEGIS_ROLES:-ingress,checker,gateway,forwarder,admin}
+      AEGIS_EVIDENCE_KEY: ${AEGIS_EVIDENCE_KEY:?AEGIS_EVIDENCE_KEY must be set in .env}
     volumes:
       - ./aegis.yaml:/config/aegis.yaml:ro
     ports:

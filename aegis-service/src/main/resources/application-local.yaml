@@ -14,3 +14,7 @@ logging:
 
 aegis:
   environment: local
+  evidence:
+    keys:
+      # Local only: a fixed key so local data survives restarts. Servers get a generated key.
+      k1: ${AEGIS_EVIDENCE_KEY:bG9jYWwtb25seS1ldmlkZW5jZS1rZXktMDAwMDAwMDA=}
