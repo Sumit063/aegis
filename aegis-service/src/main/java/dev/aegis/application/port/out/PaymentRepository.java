@@ -18,6 +18,12 @@ public interface PaymentRepository {
 
     Optional<Payment> find(long id);
 
+    /** The payment a provider message ID was first stored in, if it was seen before (any payment). */
+    Optional<Long> paymentOfMessage(Ref provider, Ref messageId);
+
+    /** Locks a payment row by ID. */
+    Optional<Payment> lock(long id);
+
     /** The validation a known payment belongs to, read without locking (to lock it first). */
     Optional<Long> validationIdOf(Ref provider, Ref paymentRef);
 

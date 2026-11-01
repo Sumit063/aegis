@@ -111,14 +111,16 @@ class CheckerIT extends IntegrationTest {
         Scenario.order(validations, tx, orderId, 49_900);
 
         Result callback = checker.check(callback(orderId, paymentId));
-        IngressRecord captured =
-                webhook(event("payment.captured", orderId, paymentId, 49_900, Instant.now()), "evt_c", Instant.now());
+        IngressRecord captured = webhook(
+                event("payment.captured", orderId, paymentId, 49_900, Instant.now()), unique("evt_"), Instant.now());
         Result webhook = checker.check(captured);
         for (int i = 0; i < 3; i++) {
             assertThat(checker.check(captured).repeat()).isTrue();
         }
         Result lateFailure = checker.check(webhook(
-                event("payment.failed", orderId, unique("pay_A"), 49_900, Instant.now()), "evt_f", Instant.now()));
+                event("payment.failed", orderId, unique("pay_A"), 49_900, Instant.now()),
+                unique("evt_"),
+                Instant.now()));
 
         assertThat(callback.verdict()).isEqualTo(Verdict.PASSED);
         assertThat(callback.merchantRef()).isEqualTo("SHOP-" + orderId);
