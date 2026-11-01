@@ -211,6 +211,15 @@ e.g. each refund's ID).
 - **Rejected:** numeric ranking of outcomes (M1 first cut); forwarding unsupported events with
   outcome OTHER.
 
+### D25 — Identities are enforced by the database
+`payment_messages (provider, message_id)` and `payment_facts (payment_id, outcome, fact_ref)` are
+primary keys written in the same transaction as the payment row.
+- **Why:** row locks make the checks correct, but a constraint makes the guarantee independent of
+  every code path, present and future (review: "do not rely solely on application-level checks").
+- A message ID is unique per provider, not per payment: seen anywhere means a repeat.
+- **Rejected:** moving the whole message history out of the JSON field: history per payment is
+  bounded (repeats only count, forgeries never join), and the identities are what needs a constraint.
+
 ## Design review log
 
 | # | Issue | Fix |

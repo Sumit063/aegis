@@ -19,11 +19,13 @@ class PaymentPersistenceAdapter implements PaymentRepository {
 
     private final PaymentJpaRepository rows;
     private final PaymentRows mapper;
+    private final IdentityRows identities;
     private final Clock clock;
 
-    PaymentPersistenceAdapter(PaymentJpaRepository rows, PaymentRows mapper, Clock clock) {
+    PaymentPersistenceAdapter(PaymentJpaRepository rows, PaymentRows mapper, IdentityRows identities, Clock clock) {
         this.rows = rows;
         this.mapper = mapper;
+        this.identities = identities;
         this.clock = clock;
     }
 
@@ -42,6 +44,16 @@ class PaymentPersistenceAdapter implements PaymentRepository {
     @Override
     public Optional<Payment> find(long id) {
         return rows.findById(id).map(mapper::toDomain);
+    }
+
+    @Override
+    public Optional<Long> paymentOfMessage(Ref provider, Ref messageId) {
+        return identities.paymentOf(provider.value(), messageId.value());
+    }
+
+    @Override
+    public Optional<Payment> lock(long id) {
+        return rows.lockById(id).map(mapper::toDomain);
     }
 
     @Override
@@ -99,12 +111,18 @@ class PaymentPersistenceAdapter implements PaymentRepository {
                         now)
                 : rows.findById(payment.id())
                         .orElseThrow(() -> new IllegalStateException("no payment " + payment.id()));
-        List<StoredEntry> entries = mapper.merge(mapper.read(row.getMessages()), payment, evidence);
+        List<StoredEntry> stored = mapper.read(row.getMessages());
+        List<StoredEntry> entries = mapper.merge(stored, payment, evidence);
         Instant due = PaymentRows.awaitsForwarding(payment)
                 ? (row.getForwardDueAt() == null ? now : row.getForwardDueAt())
                 : null;
         row.update(payment.status() == null ? null : payment.status().name(), mapper.write(entries), due, now);
-        return mapper.toDomain(rows.saveAndFlush(row));
+        PaymentEntity saved = rows.saveAndFlush(row);
+        payment.entries().stream()
+                .filter(e -> e.n() > stored.size())
+                .forEach(
+                        e -> identities.insert(saved.getId(), payment.provider().value(), e));
+        return mapper.toDomain(saved);
     }
 
     @Override
