@@ -31,9 +31,9 @@ Batches: **H1** payment facts · **H2** database-enforced identities · **H3** a
 | Business-fact identity | (payment, status): same status = same fact | done | H1 ✓ |
 | Merchant delivery identity | `<payment id>-<entry>`, stable across retries | none | — |
 | Never dedupe by amount/order/status alone | message ID first, then fact | done | H1 ✓ |
-| Database-enforced uniqueness | one row per payment (`UNIQUE`); message/fact uniqueness under the row lock | add unique constraints for message IDs and facts | H2 |
+| Database-enforced uniqueness | one row per payment (`UNIQUE`); message/fact uniqueness under the row lock | done: `payment_messages`, `payment_facts` keys (V2) | H2 ✓ |
 | Attacker cannot claim a genuine event ID | unverified messages get `unverified:<uuid>` rows | none (tested) | — |
-| Concurrent duplicates across consumers and channels | row locks; `CheckerIT` T15 | constraints in H2 make it independent of code paths | H2 |
+| Concurrent duplicates across consumers and channels | row locks; `CheckerIT` T15 | done: `IdentityIT` 10 concurrent consumers | H2 ✓ |
 
 ## 3. Kafka ingress contract
 
@@ -52,11 +52,11 @@ Batches: **H1** payment facts · **H2** database-enforced identities · **H3** a
 
 | Requirement | As built | Gap | Batch |
 |---|---|---|---|
-| Constraints, locking, no lost updates | `UNIQUE (provider, payment_ref)`, `FOR UPDATE`, one transaction per message | identities by constraint (H2) | H2 |
+| Constraints, locking, no lost updates | `UNIQUE (provider, payment_ref)`, `FOR UPDATE`, one transaction per message | done | H2 ✓ |
 | Transition atomic with verdict | same transaction | none | — |
 | Unbounded JSON arrays | repeats only count; unverified traffic never joins a genuine row; status checks limited | bounded by design; documented | — |
-| Indexes | forward-due partial index, lookups | identity tables in H2 | H2 |
-| Migrations fresh and existing | Flyway V1 on staging | each batch adds Vn | H2 |
+| Indexes | forward-due partial index, lookups | done | H2 ✓ |
+| Migrations fresh and existing | Flyway V1 on staging | V2 backfills existing rows; applied on staging | H2 ✓ |
 | Retention of evidence and rejected traffic | 180 days for all | shorter retention for quarantine (H3) | H3 |
 
 ## 5. Forwarding
@@ -113,8 +113,8 @@ Batches: **H1** payment facts · **H2** database-enforced identities · **H3** a
 
 ## 10. Failure-injection suite (review items 1–26)
 
-Covered today: 1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 13, 14, 15 (by message ID), 16, 17, 18, 20 (lease), 21,
-23 (Gateway), 25 (leases and Kafka offsets). To add: 8 and 22 (H2–H3), 19 (documented
+Covered today: 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15 (by message ID), 16, 17, 18, 20 (lease), 21,
+23 (Gateway), 25 (leases and Kafka offsets). To add: 22 (H3), 19 (documented
 merchant idempotency), 24 (H4), 26 (H5).
 
 ## 11. Performance

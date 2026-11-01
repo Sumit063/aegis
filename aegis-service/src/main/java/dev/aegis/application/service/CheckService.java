@@ -90,8 +90,12 @@ public class CheckService implements CheckMessageUseCase {
         }
 
         Validation validation = validationOf(parsed);
-        Payment payment = payments.lockOrCreate(
-                parsed.provider(), parsed.paymentRef(), validation == null ? null : validation.id());
+        // A message ID names one message for the whole provider: seen anywhere means a repeat,
+        // counted where it was first stored (D25).
+        Payment payment = payments.paymentOfMessage(parsed.provider(), parsed.id())
+                .flatMap(payments::lock)
+                .orElseGet(() -> payments.lockOrCreate(
+                        parsed.provider(), parsed.paymentRef(), validation == null ? null : validation.id()));
         Gate.Result result = Gate.receive(parsed, validation, payment, clock.instant(), adapter.policy());
 
         if (result.validation() != null && !result.validation().equals(validation)) {
