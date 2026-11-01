@@ -55,6 +55,8 @@ class PaymentTest {
                 .append(message(MessageType.PAY_REQUEST, "aegis:req", Outcome.PENDING), Verdict.PASSED);
 
         assertThat(sent.isInFlight()).isTrue();
+        assertThat(sent.status()).as("the acknowledgement is not news").isNull();
+        assertThat(Payment.open(1L, RAZORPAY, Ref.of("pay_TEST")).isInFlight()).isFalse();
         assertThat(sent.append(message(MessageType.ASYNC_RESPONSE, "npci:1", Outcome.SUCCESS), Verdict.PASSED)
                         .isInFlight())
                 .isFalse();

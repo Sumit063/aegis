@@ -108,9 +108,12 @@ public record Payment(Long id, Long validationId, Ref provider, Ref paymentRef, 
         return new Payment(id, validationId, provider, paymentRef, next, updated);
     }
 
-    /** A payment request went out and no final answer has passed yet. */
+    /** A payment request went out and no final answer (success, failure, refund) has passed yet. */
     public boolean isInFlight() {
-        return status == Outcome.PENDING;
+        boolean requested = entries.stream()
+                .anyMatch(
+                        e -> e.type() == MessageType.PAY_REQUEST && e.verdict().passed());
+        return requested && (status == null || status == Outcome.PENDING);
     }
 
     /** Entries of one type, e.g. earlier status checks when enforcing provider limits. */
@@ -118,10 +121,9 @@ public record Payment(Long id, Long validationId, Ref provider, Ref paymentRef, 
         return entries.stream().filter(e -> e.type() == type).toList();
     }
 
+    // The request's own acknowledgement is not news about the payment; only the provider's answers are.
     private Outcome advance(PaymentMessage message) {
-        if (message.outcome() == Outcome.OTHER) {
-            return status;
-        }
-        return message.type() == MessageType.PAY_REQUEST && status != null ? status : message.outcome();
+        boolean news = message.outcome() != Outcome.OTHER && message.type() != MessageType.PAY_REQUEST;
+        return news ? message.outcome() : status;
     }
 }
