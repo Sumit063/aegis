@@ -1,5 +1,9 @@
 # Production (branch `master`). Live gateway keys. No defaults anywhere: a missing secret stops startup.
 logging:
+  # One JSON object per line (ECS), so logs are searchable by reference.
+  structured:
+    format:
+      console: ecs
   level:
     dev.aegis: INFO
 

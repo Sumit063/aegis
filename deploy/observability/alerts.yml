@@ -1,0 +1,49 @@
+# Alerts from LLD §12. Every rule names what to look at in Admin.
+groups:
+  - name: aegis
+    rules:
+      - alert: AegisDown
+        expr: up{job="aegis"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: Aegis is not answering; providers are retrying and applications get no messages.
+
+      - alert: ForgedMessages
+        expr: sum by (provider) (increase(aegis_messages_total{reason="BAD_SIGNATURE"}[5m])) > 5
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.provider }}: more than 5 messages with a bad signature in 5 minutes (GET /admin/blocked)."
+
+      - alert: AmountOrDowngrade
+        expr: sum by (provider, reason) (increase(aegis_messages_total{reason=~"AMOUNT_MISMATCH|DOWNGRADE|NO_VALIDATION"}[5m])) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.provider }}: {{ $labels.reason }} — a genuine message disagreed with the validation (GET /admin/blocked)."
+
+      - alert: ForwardFailed
+        expr: sum by (application) (increase(aegis_forward_total{result="failed"}[15m])) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.application }}: a message could not be delivered for 72 h and is FAILED (re-forward from Admin)."
+
+      - alert: ForwardLag
+        expr: aegis_forward_lag_seconds > 300
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: The oldest message has waited more than 5 minutes for its application.
+
+      - alert: SlowAcknowledgement
+        expr: histogram_quantile(0.99, sum by (le, provider) (rate(aegis_ingress_ack_seconds_bucket[5m]))) > 2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.provider }}: p99 acknowledgement above 2 s (Razorpay allows 5 s)."
+
+      - alert: CheckerLag
+        expr: sum(kafka_consumer_fetch_manager_records_lag_max{client_id=~".*checker.*"}) > 1000
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: More than 1000 messages waiting for the Checker (is PostgreSQL up?).

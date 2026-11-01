@@ -1,0 +1,18 @@
+{
+  "title": "Aegis",
+  "uid": "aegis",
+  "schemaVersion": 39,
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    { "type": "timeseries", "title": "Messages by verdict", "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [ { "expr": "sum by (verdict) (rate(aegis_messages_total[5m]))", "legendFormat": "{{verdict}}" } ] },
+    { "type": "timeseries", "title": "Blocks by reason", "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [ { "expr": "sum by (reason) (increase(aegis_messages_total{verdict=\"BLOCKED\"}[5m]))", "legendFormat": "{{reason}}" } ] },
+    { "type": "timeseries", "title": "Acknowledgement p99 (s)", "gridPos": { "x": 0, "y": 8, "w": 8, "h": 8 },
+      "targets": [ { "expr": "histogram_quantile(0.99, sum by (le, provider) (rate(aegis_ingress_ack_seconds_bucket[5m])))", "legendFormat": "{{provider}}" } ] },
+    { "type": "timeseries", "title": "Forwarding", "gridPos": { "x": 8, "y": 8, "w": 8, "h": 8 },
+      "targets": [ { "expr": "sum by (result) (rate(aegis_forward_total[5m]))", "legendFormat": "{{result}}" } ] },
+    { "type": "stat", "title": "Oldest undelivered (s)", "gridPos": { "x": 16, "y": 8, "w": 8, "h": 8 },
+      "targets": [ { "expr": "max(aegis_forward_lag_seconds)" } ] }
+  ]
+}

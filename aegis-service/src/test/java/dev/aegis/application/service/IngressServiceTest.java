@@ -35,6 +35,7 @@ class IngressServiceTest {
                 new ProviderRegistry(List.of(adapter)),
                 log,
                 Fakes.CIPHER,
+                Fakes.METRICS,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 

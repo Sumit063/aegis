@@ -11,6 +11,7 @@ import dev.aegis.application.port.out.ForwardRepository;
 import dev.aegis.application.port.out.ForwardRepository.Attempt;
 import dev.aegis.application.port.out.ForwardRepository.Claimed;
 import dev.aegis.application.port.out.ForwardRepository.Pending;
+import dev.aegis.application.port.out.MetricsPort;
 import dev.aegis.application.port.out.ValidationRepository;
 import dev.aegis.domain.payment.Validation;
 import java.time.Clock;
@@ -53,6 +54,7 @@ public class ForwardService implements ForwardUseCase {
     private final DirectoryPort directory;
     private final ForwardClientPort client;
     private final EvidenceCipherPort cipher;
+    private final MetricsPort metrics;
     private final TransactionTemplate tx;
     private final Clock clock;
 
@@ -63,6 +65,7 @@ public class ForwardService implements ForwardUseCase {
             DirectoryPort directory,
             ForwardClientPort client,
             EvidenceCipherPort cipher,
+            MetricsPort metrics,
             TransactionTemplate tx,
             Clock clock) {
         this.queue = queue;
@@ -71,6 +74,7 @@ public class ForwardService implements ForwardUseCase {
         this.directory = directory;
         this.client = client;
         this.cipher = cipher;
+        this.metrics = metrics;
         this.tx = tx;
         this.clock = clock;
     }
@@ -122,6 +126,10 @@ public class ForwardService implements ForwardUseCase {
                     : client.deliver(application, delivery(payment, message, validation));
             Attempt attempt = error == null ? new Attempt(true, now, null, null) : retry(message, now, error);
             tx.executeWithoutResult(status -> queue.record(payment.paymentId(), message.n(), attempt));
+            metrics.forwarded(
+                    application == null ? "unknown" : application.name(),
+                    attempt.delivered(),
+                    !attempt.delivered() && attempt.nextAt() == null);
             if (error != null) {
                 log.warn(
                         "forward {}-{} not delivered (attempt {}): {}",
