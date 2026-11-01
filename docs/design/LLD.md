@@ -199,6 +199,12 @@ CREATE TABLE payments (
 CREATE INDEX payments_by_validation ON payments (validation_id);
 CREATE INDEX payments_forward_due   ON payments (forward_due_at) WHERE forward_due_at IS NOT NULL;
 
+-- V2: identities the database enforces (D25)
+CREATE TABLE payment_messages (provider text, message_id text, payment_id bigint REFERENCES payments
+  ON DELETE CASCADE, n int, PRIMARY KEY (provider, message_id));        -- one message, once
+CREATE TABLE payment_facts (payment_id bigint REFERENCES payments ON DELETE CASCADE, outcome text,
+  fact_ref text DEFAULT '', n int, PRIMARY KEY (payment_id, outcome, fact_ref));  -- one fact, once
+
 CREATE TABLE config (
   key text PRIMARY KEY, value jsonb NOT NULL, version int NOT NULL,
   updated_by text NOT NULL, updated_at timestamptz NOT NULL
