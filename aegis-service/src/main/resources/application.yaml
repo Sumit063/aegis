@@ -26,6 +26,18 @@ spring:
     locations: classpath:db/migration
   kafka:
     bootstrap-servers: ${AEGIS_KAFKA_BOOTSTRAP}
+    producer:
+      # Acknowledged means stored on every in-sync replica, exactly once per send (DECISIONS D6).
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      properties:
+        enable.idempotence: true
+        # Fail within the provider's acknowledgement deadline (Razorpay: 5 s) so it retries.
+        max.block.ms: 2000
+        request.timeout.ms: 2000
+        delivery.timeout.ms: 3000
+        linger.ms: 0
 
 server:
   port: 8080
