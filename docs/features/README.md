@@ -36,7 +36,19 @@ Built in this order; each row is one branch and one PR.
 | F12 | Gateway API: validations, payment requests, status checks | M1 | F05, F08 | done |
 | F13 | Forwarder: Aegis signature, optional JWE, retries, ordering | M1 | F10 | done |
 | F14 | Admin API, runtime settings, retention | M1 | F05, F13 | done |
-| F15 | Observability: metrics, alerts, log masking | M1 | F09–F13 | planned |
-| F16 | Lab through Aegis; M1 acceptance (T1–T19) | M1 | F03, F09–F15 | planned |
+| F15 | Observability: metrics, alerts, dashboards, log safety | M1 | F09–F14 | done |
+| F16 | Lab through Aegis; M1 acceptance (T1–T19) | M1 | F03, F09–F15 | done |
 
-M2–M4 features are added here when M1 is done.
+## Hardening (after M1)
+
+From an external review of correctness, abuse resistance and recovery; each is one branch.
+
+| ID | Hardening | Status |
+|---|---|---|
+| H1 | Payment facts: explicit transitions, fact identity (partial refunds, reversals), unsupported events not forwarded | planned |
+| H2 | Database-enforced identities: message IDs and business facts unique by constraint | planned |
+| H3 | Abuse limits: bounded forgery quarantine, per-connection rate and concurrency limits, poison records to a dead-letter topic | planned |
+| H4 | Callback and destinations: expiring, payment-bound signed results; destination URL policy (SSRF) | planned |
+| H5 | Operations: correlation IDs through HTTP and Kafka, Kafka in readiness, recovery runbook, pipeline benchmark | planned |
+
+M2–M4 features are added here after the hardening batches.

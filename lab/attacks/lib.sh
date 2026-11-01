@@ -18,6 +18,7 @@ case "$TARGET" in
     ;;
   aegis)
     SHOP="${SHOP:-http://127.0.0.1:8092}"
+    KEY_ID="rzp_test_aegis"
     WEBHOOK_URL="${AEGIS:-http://127.0.0.1:8080}/in/razorpay"
     callback_url() { echo "${AEGIS:-http://127.0.0.1:8080}/in/razorpay/callback"; }
     ;;
@@ -27,7 +28,7 @@ esac
 # Switches the shop's flaws for this attack: only the flaw under test is on.
 flaws() {
   local list=""
-  [[ "$TARGET" == careful ]] || list="$(printf '"%s",' "$@" | sed 's/,$//')"
+  if [[ "$TARGET" != careful && $# -gt 0 ]]; then list="$(printf '"%s",' "$@" | sed 's/,$//')"; fi
   curl -fsS -X PUT "$SHOP/flaws" -H 'Content-Type: application/json' -d "{\"flaws\":[$list]}" >/dev/null
 }
 
@@ -52,6 +53,10 @@ payment_event() { # event order_id amount [payment_id]
   printf '{"entity":"event","account_id":"acc_lab","event":"%s","contains":["payment"],"payload":{"payment":{"entity":{"id":"%s","entity":"payment","amount":%s,"currency":"INR","status":"captured","order_id":"%s","method":"upi","notes":{}}}},"created_at":%s}' \
     "$1" "${4:-pay_forged$RANDOM}" "$3" "$2" "$(date +%s)"
 }
+
+# Aegis delivers asynchronously (Kafka → Checker → Forwarder), so look at the shop only after
+# anything that was going to arrive has arrived.
+settle() { [[ "$TARGET" == aegis ]] && sleep 3 || true; }
 
 # Prints one result line. LOSS is "yes" when the shop lost something; DETAIL says what happened.
 verdict() { # id loss detail

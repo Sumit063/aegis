@@ -14,7 +14,7 @@ compose+=(-f lab/compose.yaml)
 modes=(direct careful)
 grep -q '^  aegis:' lab/compose.yaml && modes+=(aegis)
 
-./mvnw -q -B -ntp -DskipTests package -pl lab/mock-gateway,lab/vulnshop -am
+./mvnw -q -B -ntp -DskipTests package -pl lab/mock-gateway,lab/vulnshop,aegis-service -am
 "${compose[@]}" up -d --build --wait --quiet-pull >/dev/null
 [[ "${KEEP:-}" == 1 ]] || trap '"${compose[@]}" down -v >/dev/null 2>&1' EXIT
 
@@ -30,6 +30,14 @@ for mode in "${modes[@]}"; do
     [[ "$(awk '{print $2}' <<<"$out")" == "$expected" ]] || failed=1
   done
 done
+
+legit=""
+if [[ " ${modes[*]} " == *" aegis "* ]]; then
+  echo "── legitimate traffic through Aegis (expected: every order fulfilled exactly once)"
+  if ! TARGET=aegis lab/attacks/legit.sh "${LEGIT:-100}" >"$out_dir/legit" 2>&1; then failed=1; fi
+  legit="$(tail -1 "$out_dir/legit")"
+  echo "$legit"
+fi
 
 {
   echo "# Exploit Lab results"
@@ -47,6 +55,10 @@ done
     done
     echo "$row"
   done
+  if [[ -n "$legit" ]]; then
+    echo
+    echo "**Legitimate traffic through Aegis:** ${legit#legit } (webhook + browser callback per payment, zero false blocks expected)."
+  fi
 } >lab/RESULTS.md
 
 echo "── written lab/RESULTS.md"
