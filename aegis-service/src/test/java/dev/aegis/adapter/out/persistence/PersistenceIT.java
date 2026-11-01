@@ -241,4 +241,16 @@ class PersistenceIT extends IntegrationTest {
             Thread.currentThread().interrupt();
         }
     }
+
+    /** V3: refunds are facts, so an older version's REFUNDED state reads as captured; REVERSED is storable. */
+    @Test
+    void aLegacyRefundedStateReadsAsCapturedAndReversedIsAllowed() {
+        String insert = "insert into payments (provider, payment_ref, status, messages, created_at, updated_at)"
+                + " values ('razorpay', ?, ?, '[]', now(), now()) returning id";
+        Long legacy = jdbc.queryForObject(insert, Long.class, "pay_" + UUID.randomUUID(), "REFUNDED");
+        Long reversed = jdbc.queryForObject(insert, Long.class, "pay_" + UUID.randomUUID(), "REVERSED");
+
+        assertThat(payments.find(legacy).orElseThrow().status()).isEqualTo(Outcome.SUCCESS);
+        assertThat(payments.find(reversed).orElseThrow().status()).isEqualTo(Outcome.REVERSED);
+    }
 }
