@@ -69,6 +69,7 @@ scripts/setup-dev.sh                                      # git hooks + toolchai
 ./mvnw verify                                             # full build: format, tests, architecture, integration, coverage
 docker compose -f deploy/compose.yaml -f deploy/compose.local.yaml up -d postgres kafka  # local infra
 ./mvnw -pl aegis-service spring-boot:run                  # run the service (profile: local)
+scripts/check.sh [staging]                                # validate local, or what the server runs
 ```
 
 ## Milestones

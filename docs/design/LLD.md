@@ -41,19 +41,25 @@ Ingress (synchronous, before acknowledging)
   5. acknowledge   adapter.ack(): 2xx or <Ack/>
 Checker (Kafka consumer, one database transaction per message)
   6. parse         adapter.parse() → message_id, provider_ref, payment_ref, outcome, amount, sent_at
-  7. freshness     sent_at within connection.freshness (Razorpay: 25 h)  → REPLAY
-  8. lock          SELECT validation WHERE provider_ref = ? FOR UPDATE   → none: NO_VALIDATION
+  7. lock          SELECT validation WHERE provider_ref = ? FOR UPDATE
                    then INSERT payment row (provider, payment_ref) ON CONFLICT DO NOTHING; load it
-  9. duplicate     message_id already in payment.messages → that entry's duplicates + 1, stop
- 10. amount        message amount/currency (when present) = validation   → AMOUNT_MISMATCH
- 11. downgrade     outcome FAILED and validation.status = PAID            → DOWNGRADE
+  8. repeat        message_id already in payment.messages → that entry's duplicates + 1, stop
+  9. freshness     sent_at within connection.freshness (Razorpay: 25 h)  → REPLAY
+ 10. validated     a validation exists and was accepted                    → NO_VALIDATION
+     amount        message amount/currency (when present) = validation   → AMOUNT_MISMATCH
+ 11. downgrade     FAILED while validation.status = PAID, or an outcome ranked below
+                   payment.status (PENDING < SUCCESS = FAILED < REFUNDED)  → DOWNGRADE
+                   SUCCESS after FAILED passes: providers authorize late (Razorpay: up to 3 days)
  12. same fact     outcome equals payment.status already passed           → DUPLICATE
  13. store         append the message to payment.messages with its verdict; if PASSED: set
                    payment.status, set validation.status = PAID on SUCCESS, mark for forwarding
  14. commit DB, then commit the Kafka offset
 ```
 
-`OTHER` outcomes (events the adapter does not map, e.g. settlements) only go through steps 1–8, then
+These rules are implemented once, in `domain.check.Gate` (F04). A repeat is detected before
+freshness, so a re-delivered old message is counted instead of stored twice.
+
+`OTHER` outcomes (events the adapter does not map, e.g. settlements) only go through steps 1–9, then
 pass. Unknown connection → 404. An adapter that cannot parse a signed message → stored
 `BLOCKED UNPARSEABLE` with an alert.
 
@@ -76,7 +82,9 @@ with `ref`, `verdict` and an Aegis signature over both.
                    the reply + verdict
 ```
 
-"In flight" = a payment row of this validation whose `status` is still `PENDING`. Only an application status check, or a result arriving, clears it. Aegis never decides
+"In flight" = a payment of this validation with a passed payment request and no final answer yet
+(`status` empty or `PENDING`). The request's own acknowledgement is not news, so it never sets
+`status`; NPCI's deemed (pending) answer still passes and is forwarded. Only an application status check, or a result arriving, clears it. Aegis never decides
 on its own that a request has expired.
 
 ## 5. Block reasons

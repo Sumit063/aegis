@@ -40,10 +40,10 @@ any provider. Each of those can change without touching the core.
 ```
 aegis-service/src/main/java/dev/aegis/
   domain/                 pure Java, no framework imports
-    shared/               value objects: Money, ProviderId, references
+    shared/               value objects: Money, Ref
     message/              PaymentMessage, MessageType, Outcome, Verdict, BlockReason
-    validation/           Validation
-    check/                Check chain: Freshness, Duplicate, Match, Amount, Downgrade, SameFact, InFlight, EnquiryLimit
+    payment/              Validation, Payment (one payment and all its messages)
+    check/                Check, Checks (named rules), Gate (receive / permit): the only entry point
   application/
     port/in/              ReceiveMessageUseCase, HandleCallbackUseCase, SendOutboundUseCase, ForwardUseCase, AdminQueries
     port/out/             IngressLogPort, ValidationRepository, PaymentRepository, ProviderClientPort,
@@ -94,7 +94,7 @@ aegis-service/src/main/java/dev/aegis/
 | **Adapter + Anti-corruption layer** | `provider.<x>` | Each provider's formats, signatures and statuses become provider-neutral `ParsedMessage`/`Outcome` |
 | **Plugin + Registry** | `ProviderRegistry` | Add providers without touching the core |
 | **Strategy** | Signature schemes (HMAC, checksum, XML-DSig), ack formats, backoff | Swap per provider by configuration |
-| **Chain of Responsibility** | `Check` chain (freshness → duplicate → match → amount → downgrade → same fact) | Each check isolated and tested alone; first failure gives the block reason |
+| **Chain of Responsibility** | `Checks.run` over named `Check` rules (fresh → validated → amount → no downgrade → new fact) | Each rule isolated and tested alone; first failure gives the block reason |
 | **Value Object** | `Money`, `ProviderId`, references as records | Validation at construction |
 | **Idempotent Consumer** | Message ID and same-fact checks on the locked payment row | At-least-once input, once-only forwarding |
 | **Competing Consumers** | Kafka partitions; Forwarder claims rows with `FOR UPDATE SKIP LOCKED` | Scale by adding instances |

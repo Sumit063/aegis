@@ -10,7 +10,10 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 DEPLOY_ROOT="$HOME/aegis"
 DOCKER_GID="$(getent group docker | cut -d: -f3)"
 
+# The runner's user differs from the deploy user; both are in the docker group, which owns the root.
 mkdir -p "$DEPLOY_ROOT"
+chgrp -R docker "$DEPLOY_ROOT" && chmod -R g+rwX "$DEPLOY_ROOT"
+find "$DEPLOY_ROOT" -type d -exec chmod g+s {} +
 docker build -t aegis-runner:local "$HERE"
 docker rm -f aegis-runner >/dev/null 2>&1 || true
 docker volume create aegis-runner-state >/dev/null

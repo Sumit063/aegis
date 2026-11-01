@@ -56,6 +56,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+      AEGIS_VERSION: ${AEGIS_TAG:-master}
       AEGIS_DB_URL: jdbc:postgresql://postgres:5432/aegis
       AEGIS_DB_USER: aegis
       AEGIS_DB_PASSWORD: ${POSTGRES_PASSWORD:-aegis-local-only}
