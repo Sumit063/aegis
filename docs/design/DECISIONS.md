@@ -231,6 +231,13 @@ primary keys written in the same transaction as the payment row.
 - Limits are per instance and approximate across instances: they bound load, they never decide
   anything about money.
 
+### D27 — Destinations are configuration, checked against SSRF
+Provider base URLs, forward URLs and return URLs come only from `aegis.yaml`. Every one is checked at
+startup and before each send: http(s), never link-local or metadata addresses, `https` in production
+unless a private network is explicitly allowed. Private and loopback addresses are allowed on
+purpose (self-hosted merchants).
+- The browser's signed result is bound to the payment and timestamped (`payment`, `ts`).
+
 ## Design review log
 
 | # | Issue | Fix |

@@ -10,6 +10,7 @@ import com.nimbusds.jose.Payload;
 import com.nimbusds.jose.crypto.RSAEncrypter;
 import dev.aegis.application.port.out.Application;
 import dev.aegis.application.port.out.ForwardClientPort;
+import dev.aegis.provider.spi.Destinations;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -66,6 +67,11 @@ class ForwardHttpClient implements ForwardClientPort {
 
     @Override
     public String deliver(Application application, Delivery delivery) {
+        try {
+            Destinations.check(application.forwardUrl(), true);
+        } catch (IllegalArgumentException e) {
+            return "refused destination: " + e.getMessage();
+        }
         String body = json.writeValueAsString(message(delivery));
         String contentType = "application/json";
         if (application.jwePublicKey() != null) {
