@@ -1,2 +1,4 @@
+# The build context holds only the jars the images need.
 *
 !aegis-service/target/aegis.jar
+!lab/*/target/*.jar

@@ -51,7 +51,7 @@ provider.
 - [High-level design](docs/design/HLD.md) — role, problems, checks, zero trust, guarantees, failures
 - [Low-level design](docs/design/LLD.md) — endpoints, pipelines, adapter interface, schema, forwarding, tests
 - [Decisions](docs/design/DECISIONS.md) — every choice and why
-- [Exploit Lab](docs/design/EXPLOIT-LAB.md) — reproducible attacks that prove the protection
+- [Exploit Lab](docs/design/EXPLOIT-LAB.md) — reproducible attacks that prove the protection ([lab/](lab/README.md))
 
 ## Engineering
 
@@ -70,13 +70,14 @@ scripts/setup-dev.sh                                      # git hooks + toolchai
 docker compose -f deploy/compose.yaml -f deploy/compose.local.yaml up -d postgres kafka  # local infra
 ./mvnw -pl aegis-service spring-boot:run                  # run the service (profile: local)
 scripts/check.sh [staging]                                # validate local, or what the server runs
+lab/run.sh                                                # Exploit Lab: every attack, results in lab/RESULTS.md
 ```
 
 ## Milestones
 
 | # | Milestone | Status |
 |---|---|---|
-| M0 | Exploit Lab — reproduce the CVE classes in Docker | design done |
+| M0 | Exploit Lab — reproduce the CVE classes in Docker ([results](lab/RESULTS.md)) | done |
 | M1 | Core gateway with Razorpay | design done |
 | M2 | Stripe and Paytm-style adapters; load and failure tests | planned |
 | M3 | NPCI-style XML adapters (BBPS, UPI) against a simulator | planned |

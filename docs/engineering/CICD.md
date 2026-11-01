@@ -45,6 +45,7 @@ branch keeps the environment branches identical in content, just at different po
   CI  (GitHub-hosted, every push to master/staging/dev and every pull request)
     1. commit-lint    Conventional Commits in the pushed range
     2. build          ./mvnw verify: format, compile, unit, ArchUnit, integration, coverage
+    2b. lab           lab/run.sh: every exploit in Docker (EXPLOIT-LAB)
     3. image (push)   ghcr.io/<owner>/aegis:<sha> and :<branch>
   CD  (self-hosted runner on the host, after CI succeeds on a push)
     4. deploy         staging → Ubuntu host; pull :<sha>; compose up; wait for readiness
@@ -119,6 +120,7 @@ instead (LLD §11.2).
 | Architecture rules | build | ArchUnit |
 | Profile safety | build | `ProfilesTest`: no default credentials outside `local` |
 | Coverage | build | JaCoCo ≥ 80 % lines (domain, application) |
+| Exploits | CI job `Exploit Lab` | `lab/run.sh`: F1–F10 exploited directly, blocked with the flaw off, blocked through Aegis |
 | Toolchain | build | Maven Enforcer: Java 25, Maven ≥ 3.9 |
 | Dependency updates | weekly | Dependabot (Maven, Actions, Docker) |
 

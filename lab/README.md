@@ -8,6 +8,22 @@ Reproducible attacks against a realistic merchant integration, run once **direct
 | [`mock-gateway`](mock-gateway) | Razorpay-compatible provider: orders, payments, signed webhooks and Checkout results | 8090 |
 | [`vulnshop`](vulnshop) | Reference merchant; each integration flaw F1–F10 is a switch (`shop.flaws`) | 8091 |
 
+```bash
+lab/run.sh            # build, start, run every attack, write lab/RESULTS.md (needs Docker, jq, openssl)
+KEEP=1 lab/run.sh     # same, and leave the lab running for manual attacks
+TARGET=direct lab/attacks/F5.sh   # one attack (lab running)
+```
+
+Every attack runs in each mode and is judged only by the shop's loss:
+
+| Mode | Shop | Flaw under test | Expected |
+|---|---|---|---|
+| `direct` | verifies provider messages itself | on | exploited |
+| `careful` | the same shop | off (control) | blocked |
+| `aegis` | behind Aegis (from M1) | on | blocked |
+
+Latest results: [RESULTS.md](RESULTS.md). CI runs the lab on every push.
+
 Everything here uses fake, lab-only secrets and runs on a private Docker network. Nothing in the
 lab talks to a real gateway.
 
