@@ -34,7 +34,7 @@ Built in this order; each row is one branch and one PR.
 | F10 | Checker: inbound checks and verdicts | M1 | F09 | done |
 | F11 | Browser callback and signed redirect | M1 | F10 | done |
 | F12 | Gateway API: validations, payment requests, status checks | M1 | F05, F08 | done |
-| F13 | Forwarder: Aegis signature, optional JWE, retries, ordering | M1 | F10 | planned |
+| F13 | Forwarder: Aegis signature, optional JWE, retries, ordering | M1 | F10 | done |
 | F14 | Admin API and runtime settings | M1 | F05 | planned |
 | F15 | Observability: metrics, alerts, log masking | M1 | F09–F13 | planned |
 | F16 | Lab through Aegis; M1 acceptance (T1–T19) | M1 | F03, F09–F15 | planned |

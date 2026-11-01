@@ -20,6 +20,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -44,6 +45,11 @@ class GatewayIT extends IntegrationTest {
     JdbcTemplate jdbc;
 
     private final HttpClient http = HttpClient.newHttpClient();
+
+    @AfterEach
+    void realTime() {
+        clock.reset();
+    }
 
     private HttpResponse<String> call(String path, String body, String apiKey) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
