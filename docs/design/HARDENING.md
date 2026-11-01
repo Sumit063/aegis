@@ -57,7 +57,7 @@ Batches: **H1** payment facts · **H2** database-enforced identities · **H3** a
 | Unbounded JSON arrays | repeats only count; unverified traffic never joins a genuine row; status checks limited | bounded by design; documented | — |
 | Indexes | forward-due partial index, lookups | done | H2 ✓ |
 | Migrations fresh and existing | Flyway V1 on staging | V2 backfills existing rows; applied on staging | H2 ✓ |
-| Retention of evidence and rejected traffic | 180 days for all | done: 7 days | H3 ✓ |
+| Retention of evidence and rejected traffic | 180 days for all | done: 7 days (H3); by last activity, never while due (H6) | H3 ✓ H6 ✓ |
 
 ## 5. Forwarding
 
@@ -109,7 +109,7 @@ Batches: **H1** payment facts · **H2** database-enforced identities · **H3** a
 | Correlation IDs through HTTP and Kafka | ingress record ID only | done: `X-Request-Id` → MDC → Kafka record → Checker logs; `X-Aegis-Message-Id` on deliveries | H5 ✓ |
 | Metrics and alerts | verdicts, ack latency, forwards, lag | done: `aegis_dead_letters_total`, `aegis_ingress_limited_total`, alerts | H3 ✓ |
 | Readiness reflects dependencies | database only | done: readiness = database + Kafka (`FailureIT`) | H5 ✓ |
-| Backup, restore, replay runbook | not written | done: [RUNBOOK](../engineering/RUNBOOK.md); restore rehearsal is manual (§12) | H5 ✓ |
+| Backup, restore, replay runbook | not written | done: [RUNBOOK](../engineering/RUNBOOK.md); restore rehearsal is manual (§12); guarantees per failure and retention policy (H6) | H5 ✓ H6 ✓ |
 
 ## 10. Failure-injection suite (review items 1–26)
 
@@ -132,3 +132,28 @@ It found and fixed a Forwarder pacing limit (end-to-end p99 in a burst 19.3 s �
 | Multi-instance limits | per-instance by design (D26) | a shared limiter only if real traffic needs it |
 | mTLS to merchants | configured at the TLS proxy, not in Aegis | document a reference proxy config with the first production host |
 | Real Razorpay test-mode run | needs a public URL (tunnel) and the dashboard webhook | run when staging gets a public ingress |
+
+## 13. Post-hardening review (H6)
+
+A second review of `master` after H1–H5. Each finding was checked against the code and tests before
+anything changed; "verified" states what the code actually did.
+
+| # | Finding | Verified | Change | Status |
+|---|---|---|---|---|
+| 1 | Success events without an amount skip the amount check | yes: a payment entity without `amount` gave a null amount and `AMOUNT_MATCHES` skipped it; a missing currency defaulted to `INR`; status replies the same | Razorpay adapter requires an integer `amount` and a currency on every payment entity, refund ID/amount/currency on refunds, payment ID and amount on status replies; nothing defaulted; the SPI `parse` contract states it | H6 ✓ |
+| 2 | Freshness: missing and future timestamps | yes: `FRESH` skipped a null `sentAt` and had no upper bound | Razorpay webhooks require an integer `created_at` > 0; `Policy.maxClockSkew` (SPI, default 5 min) → `FUTURE_TIMESTAMP`; both bounds inclusive; repeats still detected before freshness | H6 ✓ |
+| 3 | Partial refund vs "captured" status check | yes: a refund set the status to `REFUNDED`; `SUCCESS` after `REFUNDED` was `DOWNGRADE`, so the genuine status reply was blocked; a "refunded" reply would have counted the full amount as a new refund; a re-sent capture after a refund got `DOWNGRADE` instead of `DUPLICATE` | the status is the lifecycle only; refunds are identified facts on SUCCESS with sum ≤ paid; status replies are observations (`amount_refunded`, no fact); V3 migrates stored `REFUNDED` to `SUCCESS` | H6 ✓ |
+| 4 | Promises vs failure model | partly: README/HLD said "no passed message is lost", but deliveries stop after 72 h and topics have one replica. Not confirmed: the broker flushes each message before the ack, so power loss is covered | README/HLD narrowed; RUNBOOK §2 lists each failure per profile; `aegis.kafka.replicas` / `min-insync-replicas` for the production profile | H6 ✓ |
+| 5 | Retention consistency | yes: purging by `created_at` could delete a payment refunded last week or with a delivery still due; key retirement ignored backups | purge by `updated_at`, skip rows with `forward_due_at`; one policy table (RUNBOOK §5); key retirement rule (RUNBOOK §6) | H6 ✓ |
+| + | Found while fixing | the `payments.status` constraint did not allow `REVERSED` | V3 constraint adds REVERSED; REFUNDED stays allowed so a rollback to the previous version still writes, and is read as SUCCESS | H6 ✓ |
+
+Still open after H6 (in addition to §12):
+- Refund events that arrive **before** the capture they belong to are blocked as `INVALID_TRANSITION`
+  and stored; they are not re-evaluated when the capture arrives. A status check through Aegis
+  reconciles the total; automatic re-evaluation would need a deferred-message design.
+- A status reply without `order_id` cannot be matched to its validation (`NO_VALIDATION`) even when
+  the payment is known; Razorpay includes `order_id` for order payments.
+- The production durability profile (three brokers) is documented and configurable, not run in CI.
+- Unresolved assumption: Razorpay's payment entity stays `captured` after partial refunds and becomes
+  `refunded` only when fully refunded, with `amount_refunded` cumulative (Razorpay payments and refunds
+  API documentation); the adapter relies on it.

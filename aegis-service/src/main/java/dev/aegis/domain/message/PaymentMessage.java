@@ -13,8 +13,10 @@ import java.util.Objects;
  * same kind on one payment (e.g. each refund's ID), and is null when the outcome itself is the fact.
  *
  * <p>{@code providerRef}, {@code paymentRef}, {@code amount}, {@code sentAt} and {@code factRef} are
- * null when the provider's message does not carry them. For REFUNDED, {@code amount} is the refunded
- * amount.
+ * null when the provider's message does not carry them; an adapter fails a message that lacks a field
+ * its provider's contract requires. For REFUNDED, {@code amount} is the refunded amount: of this
+ * refund when {@code factRef} identifies it, or the provider's cumulative total when it is an
+ * observation without identity (a status reply).
  */
 public record PaymentMessage(
         Ref provider,

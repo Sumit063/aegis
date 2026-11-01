@@ -1,6 +1,7 @@
 package dev.aegis.domain.check;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.aegis.domain.message.BlockReason;
 import dev.aegis.domain.message.Outcome;
@@ -8,6 +9,7 @@ import java.time.Duration;
 import java.util.Optional;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /** Every (current, next) pair of the transition table, permitted and rejected. */
 class TransitionsTest {
@@ -33,11 +35,10 @@ class TransitionsTest {
                 "PENDING,  REFUNDED, INVALID_TRANSITION",
                 "PENDING,  REVERSED, OK",
                 "PENDING,  OTHER,    UNSUPPORTED",
-                // captured
+                // captured (a refund depends on its identity, below; refunds never change the state)
                 "SUCCESS,  PENDING,  DOWNGRADE",
                 "SUCCESS,  SUCCESS,  DUPLICATE",
                 "SUCCESS,  FAILED,   DOWNGRADE",
-                "SUCCESS,  REFUNDED, OK",
                 "SUCCESS,  REVERSED, OK",
                 "SUCCESS,  OTHER,    UNSUPPORTED",
                 // failed (SUCCESS depends on the provider, below)
@@ -46,12 +47,6 @@ class TransitionsTest {
                 "FAILED,   REFUNDED, INVALID_TRANSITION",
                 "FAILED,   REVERSED, INVALID_TRANSITION",
                 "FAILED,   OTHER,    UNSUPPORTED",
-                // refunded (another refund depends on its identity, below)
-                "REFUNDED, PENDING,  DOWNGRADE",
-                "REFUNDED, SUCCESS,  DOWNGRADE",
-                "REFUNDED, FAILED,   DOWNGRADE",
-                "REFUNDED, REVERSED, INVALID_TRANSITION",
-                "REFUNDED, OTHER,    UNSUPPORTED",
                 // reversed
                 "REVERSED, PENDING,  DOWNGRADE",
                 "REVERSED, SUCCESS,  DOWNGRADE",
@@ -76,12 +71,22 @@ class TransitionsTest {
                 .isEqualTo(reason(expected));
     }
 
-    /** Each refund is its own fact: a new refund passes, the same refund again is a duplicate. */
-    @ParameterizedTest(name = "refund after refund, same refund seen: {0} → {1}")
+    /** Each refund is a fact on the captured payment: a new refund passes, the same refund again is a duplicate. */
+    @ParameterizedTest(name = "refund of a captured payment, same refund seen: {0} → {1}")
     @CsvSource({"false, OK", "true, DUPLICATE"})
     void refundsAreDistinguishedByIdentity(boolean sameFactSeen, String expected) {
-        assertThat(Transitions.check(Outcome.REFUNDED, Outcome.REFUNDED, sameFactSeen, STRICT))
+        assertThat(Transitions.check(Outcome.SUCCESS, Outcome.REFUNDED, sameFactSeen, STRICT))
                 .isEqualTo(reason(expected));
+    }
+
+    /** A refund is not a lifecycle state, so nothing can be "after REFUNDED". */
+    @ParameterizedTest
+    @EnumSource(
+            value = Outcome.class,
+            names = {"REFUNDED", "OTHER"})
+    void refundedAndOtherAreNeverAPaymentState(Outcome current) {
+        assertThatThrownBy(() -> Transitions.check(current, Outcome.SUCCESS, false, STRICT))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static Optional<BlockReason> reason(String expected) {

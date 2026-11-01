@@ -28,7 +28,7 @@ public interface ValidationJpaRepository extends JpaRepository<ValidationEntity,
     @Query(value = """
                     DELETE FROM validations WHERE id IN
                       (SELECT v.id FROM validations v
-                       WHERE v.created_at < :cutoff
+                       WHERE v.updated_at < :cutoff
                          AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.validation_id = v.id)
                        ORDER BY v.id LIMIT :batch)""", nativeQuery = true)
     int deleteOlderThan(@Param("cutoff") Instant cutoff, @Param("batch") int batch);

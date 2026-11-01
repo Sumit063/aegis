@@ -19,15 +19,36 @@ ADMIN="Authorization: Bearer $(grep ^AEGIS_ADMIN_API_KEY= .env | cut -d= -f2)"  
 
 ## 2. Guarantees and their limits
 
+What always holds, on every profile:
+
 - **Acknowledged = stored in Kafka.** A provider gets 2xx only after the broker confirmed the write
   (`acks=all`, idempotent producer). A timeout is answered 503; the provider retries; a second copy
   is recognised by its message ID.
-- **At-least-once to the application, with stable identity.** Every passed message is delivered
-  until acknowledged (72 h), with the same `id` every time. Aegis cannot make the application's own
-  side effect happen exactly once: the application must ignore an `id` it has processed.
+- **At-least-once to the application, with stable identity.** Every passed message is delivered,
+  with the same `id` every time, until the application acknowledges it or 72 hours pass. Then it is
+  marked failed (`ForwardFailed` alert) and **kept**; an operator re-forwards it (§4). Aegis cannot
+  make the application's own side effect happen exactly once: the application must ignore an `id` it
+  has processed.
 - **Facts at most once.** A message ID and a forwardable fact exist once (database keys, D25).
-- **Not guaranteed:** surviving the loss of the single Kafka broker's disk or the database disk
-  without backups (single host). See §5.
+- **Not claimed:** exactly-once delivery, or zero loss when a disk is lost without the profile below.
+
+What survives which failure:
+
+| Failure | Single-broker profile (dev, staging, today's single host) | Production durability profile |
+|---|---|---|
+| Aegis process restart or crash | nothing lost: unchecked records stay in Kafka, offsets commit after the database | same |
+| Kafka process crash, host power loss | nothing acknowledged is lost: the broker writes each message to disk before acknowledging (`KAFKA_LOG_FLUSH_INTERVAL_MESSAGES=1`) | same; also no pause, another replica leads |
+| Kafka disk or host lost | **acknowledged messages the Checker had not yet stored are lost** (normally seconds of backlog); providers do not resend acknowledged messages; recover with status checks (§5) | nothing acknowledged is lost while one in-sync replica survives (3 replicas, 2 in sync) |
+| PostgreSQL down | Checker pauses, messages wait in Kafka; Gateway API answers 503 | same |
+| PostgreSQL disk lost | records since the last backup are lost; restore (§5) | same unless the database is replicated (outside Aegis) |
+| Application down for less than 72 h | delivered when it returns | same |
+| Application down for more than 72 h | marked failed, alerted, kept; re-forward after it returns (§4) | same |
+
+**Production durability profile:** three Kafka brokers on separate disks,
+`AEGIS_KAFKA_REPLICAS=3`, `AEGIS_KAFKA_MIN_INSYNC=2` (set before the topics are first created;
+existing topics are changed with `kafka-reassign-partitions.sh` and `kafka-configs.sh`), PostgreSQL
+backups copied off the host (§5), ideally a streaming replica. The single-broker profile is what the
+compose files run; it is not disk-loss safe and is documented as such.
 
 ## 3. Common situations
 
@@ -63,12 +84,25 @@ c exec kafka bash -c '/opt/kafka/bin/kafka-console-consumer.sh --bootstrap-serve
 
 Replaying is safe: a record already processed is recognised as a repeat.
 
-## 5. Backup, restore, disaster recovery
+## 5. Retention, backup, restore, disaster recovery
+
+One retention policy, applied by the daily retention job and by backup rotation:
+
+| Data | Kept | Why |
+|---|---|---|
+| Payment records (passed and blocked messages of genuine payments, refunds, delivery attempts, encrypted bodies and replies) | 180 days after the payment's **last activity**; never while a delivery is due | far beyond any provider's retry window (Razorpay 24 h), so a purged message cannot replay as new; a late refund keeps the whole history |
+| Validations with no payment | 180 days after last activity | same |
+| Rejected traffic (bad signature, unparseable: untrusted rows) | 7 days | security telemetry, not evidence of money (D26) |
+| Kafka records | Kafka's retention (7 days default) | a buffer, not the record of truth |
+| Backups (`pg_dump`) | 14 daily dumps | restore point for the database |
+| Evidence keys | until no retained record and no kept backup holds data sealed with them (§6) | a removed key makes that data unreadable |
+
+A restored environment keeps the same policy: the next retention run removes what has aged out.
 
 | What | How | Loss if the host dies |
 |---|---|---|
 | PostgreSQL (all records) | nightly `pg_dump` (below), copied off the host | since the last dump |
-| Kafka (messages not yet checked) | not backed up; normally drained within seconds | messages acknowledged but not yet checked; the provider will not resend them |
+| Kafka (messages not yet checked) | not backed up; normally drained within seconds | single-broker profile: messages acknowledged but not yet checked (§2) |
 | `.env`, `aegis.yaml` (secrets, configuration) | copy to a password manager / secret store when changed | **everything sealed with the evidence key becomes unreadable without it** |
 
 ```bash
@@ -92,5 +126,5 @@ Aegis polling on its own (D2).
 | Provider webhook secret | add the new one first in `aegis.yaml` (`webhook: [new, old]`), deploy, change it at the provider, then remove the old one |
 | Provider API key | create the new key at the provider, replace `key-secret`/`key-id`, deploy, revoke the old key |
 | Application signing secret / API key | coordinate with the application (it verifies Aegis's signature) |
-| Evidence key | add `k2` to `aegis.evidence.keys`, make it `current`, deploy; keep `k1` until its data passes retention (180 days) |
+| Evidence key | add `k2` to `aegis.evidence.keys`, make it `current`, deploy. `k1` still opens old data. Remove `k1` only when no record holds it (`select count(*) from payments where messages::text like '%enc:v1:k1:%'` and the same on `validations.data` return 0, at the latest 180 days after its last use) **and** the oldest kept backup was taken after that (14 more days). |
 | Admin key | replace `AEGIS_ADMIN_API_KEY` in `.env`, deploy |

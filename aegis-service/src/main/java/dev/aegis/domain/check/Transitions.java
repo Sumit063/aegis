@@ -13,13 +13,18 @@ import java.util.Optional;
  * Which outcome may follow which, for one payment (one provider transaction). Explicit, so every
  * pair is decided on purpose and tested; there is no ordering of outcomes to reason from.
  *
+ * <p>The current state is the payment's lifecycle: PENDING, SUCCESS (captured), FAILED or
+ * REVERSED. A refund is not a state: it is a fact recorded on a captured payment, which stays
+ * captured however much is refunded (the cumulative amount is checked by
+ * {@link Checks#REFUND_WITHIN_PAYMENT}). So a provider confirming "captured" after a partial refund
+ * is consistent, not a downgrade.
+ *
  * <pre>
  * current \ next  PENDING      SUCCESS            FAILED      REFUNDED            REVERSED
  * (none)          ok           ok                 ok          INVALID             INVALID
  * PENDING         DUPLICATE    ok                 ok          INVALID             ok
- * SUCCESS         DOWNGRADE    DUPLICATE          DOWNGRADE   ok                  ok
+ * SUCCESS         DOWNGRADE    DUPLICATE          DOWNGRADE   ok / DUPLICATE**    ok
  * FAILED          DOWNGRADE    policy*            DUPLICATE   INVALID             INVALID
- * REFUNDED        DOWNGRADE    DOWNGRADE          DOWNGRADE   ok / DUPLICATE**    INVALID
  * REVERSED        DOWNGRADE    DOWNGRADE          DOWNGRADE   INVALID             DUPLICATE
  * </pre>
  *
@@ -32,7 +37,7 @@ public final class Transitions {
     private Transitions() {}
 
     /**
-     * @param current the payment's state, or null if nothing has passed yet
+     * @param current the payment's lifecycle state, or null if nothing has passed yet
      * @param sameFactSeen a passed message already reported this outcome with this fact reference
      */
     public static Optional<BlockReason> check(Outcome current, Outcome next, boolean sameFactSeen, Policy policy) {
@@ -53,7 +58,8 @@ public final class Transitions {
                         switch (next) {
                             case PENDING, FAILED -> DOWNGRADE;
                             case SUCCESS -> DUPLICATE;
-                            case REFUNDED, REVERSED -> null;
+                            case REFUNDED -> sameFactSeen ? DUPLICATE : null;
+                            case REVERSED -> null;
                             case OTHER -> UNSUPPORTED;
                         };
                     case FAILED ->
@@ -64,13 +70,6 @@ public final class Transitions {
                             case REFUNDED, REVERSED -> INVALID_TRANSITION;
                             case OTHER -> UNSUPPORTED;
                         };
-                    case REFUNDED ->
-                        switch (next) {
-                            case PENDING, SUCCESS, FAILED -> DOWNGRADE;
-                            case REFUNDED -> sameFactSeen ? DUPLICATE : null;
-                            case REVERSED -> INVALID_TRANSITION;
-                            case OTHER -> UNSUPPORTED;
-                        };
                     case REVERSED ->
                         switch (next) {
                             case PENDING, SUCCESS, FAILED -> DOWNGRADE;
@@ -78,7 +77,7 @@ public final class Transitions {
                             case REVERSED -> DUPLICATE;
                             case OTHER -> UNSUPPORTED;
                         };
-                    case OTHER -> fromNothing(next);
+                    case REFUNDED, OTHER -> throw new IllegalArgumentException("not a payment state: " + current);
                 };
         return Optional.ofNullable(reason);
     }

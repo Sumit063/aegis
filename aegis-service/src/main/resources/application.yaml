@@ -85,9 +85,16 @@ aegis:
   admin:
     # Operators' key for /admin/** (generated per environment by deploy.sh).
     api-key: ${AEGIS_ADMIN_API_KEY}
+  kafka:
+    # Copies of each record and how many must confirm a write. The default suits one broker
+    # (development, staging, single-host production): a broker restart loses nothing, the loss of its
+    # disk loses what the Checker has not yet stored. Production durability: three brokers,
+    # AEGIS_KAFKA_REPLICAS=3 and AEGIS_KAFKA_MIN_INSYNC=2 (RUNBOOK §2). Applies when topics are created.
+    replicas: ${AEGIS_KAFKA_REPLICAS:1}
+    min-insync-replicas: ${AEGIS_KAFKA_MIN_INSYNC:1}
   evidence:
-    # Encrypts every stored message body. Rotate by adding a key and making it current; keep old
-    # keys until their data has passed retention.
+    # Encrypts every stored message body. Rotate by adding a key and making it current; keep a retired
+    # key until no retained record and no kept backup holds data sealed with it (RUNBOOK §6).
     current: k1
     keys:
       k1: ${AEGIS_EVIDENCE_KEY}
