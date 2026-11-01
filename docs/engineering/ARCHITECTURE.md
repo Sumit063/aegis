@@ -129,10 +129,14 @@ Lombok, deep inheritance.
 The `ProviderAdapter` interface is in LLD §6. Adding a provider:
 
 1. Create `provider/<name>/` and implement `ProviderAdapter` (unused parts keep the SPI defaults).
+   Plain Java: no Spring, no state.
 2. Map statuses strictly: only the provider's final-success status becomes `SUCCESS`.
-3. Register the bean; add a connection in configuration.
-4. Pass the shared contract test suite (signature accept/reject, empty-secret rejection, parsing,
-   acknowledgement format, freshness, enquiry limits).
+3. Register it in `META-INF/services/dev.aegis.provider.spi.ProviderAdapter` (`ServiceLoader`, the
+   standard Java plugin mechanism); add a connection in the environment's `aegis.yaml`.
+4. Extend `ProviderAdapterContract` (test sources) and pass it: genuine messages verify, the previous
+   secret verifies (rotation), unknown/empty-key/missing signatures and tampered bodies fail, trusted
+   looking headers do not help, parsing is provider-neutral, garbage is `UnparseableMessageException`,
+   acknowledgement is 2xx, required secrets are enforced.
 
 See the `add-provider` skill.
 
