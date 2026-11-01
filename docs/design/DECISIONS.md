@@ -119,6 +119,8 @@ rules on every build.
 Each provider implements `ProviderAdapter` (LLD §6): verify, decrypt, parse, acknowledge, prepare
 outbound calls, enquiry limits, freshness. Adding a provider = adding an adapter and passing the
 shared contract tests; the engine and tables don't change.
+- Adapters are discovered with `java.util.ServiceLoader`, not Spring: they stay plain Java and
+  framework-free, and the registry is the one place that knows them.
 
 ### D15 — JPA with explicit locking
 Spring Data JPA behind persistence ports; native SQL for `ON CONFLICT` inserts and `FOR UPDATE`
