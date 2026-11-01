@@ -105,13 +105,28 @@ class GatewayIT extends IntegrationTest {
         String receipt = unique("SHOP-");
         FakeProvider.on("POST /v1/orders", r -> new Answer(400, "{\"error\":{\"description\":\"amount too low\"}}"));
 
-        HttpResponse<String> response =
-                call("/gw/razorpay/validations", "{\"amount\":100,\"receipt\":\"" + receipt + "\"}", SHOP_API_KEY);
+        HttpResponse<String> response = call(
+                "/gw/razorpay/validations",
+                "{\"amount\":100,\"currency\":\"INR\",\"receipt\":\"" + receipt + "\"}",
+                SHOP_API_KEY);
 
         assertThat(response.statusCode()).isEqualTo(400);
         assertThat(response.body()).contains("amount too low");
         assertThat(jdbc.queryForObject("select status from validations where merchant_ref = ?", String.class, receipt))
                 .isEqualTo("FAILED");
+    }
+
+    /** Razorpay requires the currency of an order: Aegis refuses it locally instead of assuming one (H6). */
+    @Test
+    void anOrderWithoutACurrencyNeverReachesTheProvider() throws Exception {
+        String receipt = unique("SHOP-");
+        int before = FakeProvider.received("/v1/orders").size();
+
+        HttpResponse<String> response =
+                call("/gw/razorpay/validations", "{\"amount\":100,\"receipt\":\"" + receipt + "\"}", SHOP_API_KEY);
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(FakeProvider.received("/v1/orders")).hasSize(before);
     }
 
     /** T16: no key, another application's key, or a missing client certificate never gets through. */

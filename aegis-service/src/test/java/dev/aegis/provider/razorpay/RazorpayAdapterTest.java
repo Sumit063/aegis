@@ -90,6 +90,155 @@ class RazorpayAdapterTest {
                 .isInstanceOf(UnparseableMessageException.class);
     }
 
+    // ---- required fields: fail closed (H6) -------------------------------------------------------
+
+    private PaymentMessage parseBody(String body) {
+        return adapter.parse(
+                Channel.SERVER,
+                Razorpay.webhook(body, Razorpay.WEBHOOK_SECRET, "evt_h6"),
+                Razorpay.connection(),
+                Instant.now());
+    }
+
+    private static String paymentEvent(String event, String amountAndCurrency, String createdAt) {
+        return """
+                {"entity":"event","event":"%s","contains":["payment"],"payload":{"payment":{"entity":\
+                {"id":"pay_Y","entity":"payment",%s"status":"captured","order_id":"order_X"}}}%s}""".formatted(event, amountAndCurrency, createdAt);
+    }
+
+    /** Without a valid amount and currency the amount check could not run, so the event is refused. */
+    @ParameterizedTest(name = "{0} with {1} → unparseable")
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "payment.captured   | '\"currency\":\"INR\",'",
+                "payment.captured   | '\"amount\":null,\"currency\":\"INR\",'",
+                "payment.captured   | '\"amount\":\"49900\",\"currency\":\"INR\",'",
+                "payment.captured   | '\"amount\":499.5,\"currency\":\"INR\",'",
+                "payment.captured   | '\"amount\":-1,\"currency\":\"INR\",'",
+                "payment.captured   | '\"amount\":49900,'",
+                "payment.captured   | '\"amount\":49900,\"currency\":null,'",
+                "payment.captured   | '\"amount\":49900,\"currency\":\"XXZ\",'",
+                "payment.captured   | '\"amount\":49900,\"currency\":356,'",
+                "order.paid         | '\"currency\":\"INR\",'",
+                "payment.failed     | '\"amount\":null,\"currency\":\"INR\",'",
+                "payment.authorized | '\"amount\":49900,'"
+            })
+    void paymentEventsNeedAnIntegerAmountAndACurrency(String event, String fields) {
+        String body =
+                paymentEvent(event, fields, ",\"created_at\":" + Instant.now().getEpochSecond());
+
+        assertThatThrownBy(() -> parseBody(body))
+                .isInstanceOf(UnparseableMessageException.class)
+                .hasMessageNotContaining("JSON");
+    }
+
+    @ParameterizedTest(name = "created_at {0} → unparseable")
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "''",
+                "',\"created_at\":null'",
+                "',\"created_at\":\"1730000000\"'",
+                "',\"created_at\":0'",
+                "',\"created_at\":-5'",
+                "',\"created_at\":1.5'",
+                "',\"created_at\":99999999999999999'"
+            })
+    void webhooksNeedAValidCreationTime(String createdAt) {
+        String body = paymentEvent("payment.captured", "\"amount\":49900,\"currency\":\"INR\",", createdAt);
+
+        assertThatThrownBy(() -> parseBody(body))
+                .isInstanceOf(UnparseableMessageException.class)
+                .hasMessageNotContaining("JSON");
+    }
+
+    @Test
+    void aLegitimateEventKeepsItsExactAmountCurrencyAndTime() {
+        long created = Instant.now().getEpochSecond();
+        PaymentMessage message = parseBody(
+                paymentEvent("order.paid", "\"amount\":49900,\"currency\":\"USD\",", ",\"created_at\":" + created));
+
+        assertThat(message.amount()).isEqualTo(Money.of(49_900, "USD"));
+        assertThat(message.sentAt()).isEqualTo(Instant.ofEpochSecond(created));
+    }
+
+    /** Unknown authenticated events need no payment fields: they are UNSUPPORTED and never forwarded. */
+    @Test
+    void anUnknownEventNeedsNoPaymentFieldsAndAuthorizesNothing() {
+        PaymentMessage message = parseBody("""
+                {"event":"payment.dispute.created","created_at":%d,"payload":{"payment":{"entity":{"id":"pay_Y"}}}}""".formatted(Instant.now().getEpochSecond()));
+
+        assertThat(message.outcome()).isEqualTo(Outcome.OTHER);
+        assertThat(message.amount()).isNull();
+    }
+
+    @ParameterizedTest(name = "refund {0} → unparseable")
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "'\"id\":\"rfnd_1\",\"payment_id\":\"pay_Y\",\"amount\":100'",
+                "'\"id\":\"rfnd_1\",\"payment_id\":\"pay_Y\",\"amount\":\"100\",\"currency\":\"INR\"'",
+                "'\"id\":\"rfnd_1\",\"amount\":100,\"currency\":\"INR\"'"
+            })
+    void aRefundNeedsItsIdentityAmountAndCurrency(String fields) {
+        String body = """
+                {"event":"refund.processed","created_at":%d,"payload":{"refund":{"entity":{%s}}}}""".formatted(Instant.now().getEpochSecond(), fields);
+
+        assertThatThrownBy(() -> parseBody(body))
+                .isInstanceOf(UnparseableMessageException.class)
+                .hasMessageNotContaining("JSON");
+    }
+
+    private PaymentMessage statusReply(String body) {
+        return ((Reply.Payment) adapter.reply(
+                        CallKind.STATUS_CHECK,
+                        RawMessage.of(Map.of(), "{\"payment_id\":\"pay_Y\"}"),
+                        200,
+                        RawMessage.of(Map.of(), body),
+                        Razorpay.connection(),
+                        Instant.now()))
+                .message();
+    }
+
+    /** After a partial refund Razorpay still reports "captured": a capture, with the payment's amount. */
+    @Test
+    void aPartiallyRefundedPaymentIsStillCaptured() {
+        PaymentMessage message = statusReply("""
+                {"id":"pay_Y","order_id":"order_X","status":"captured","amount":49900,"currency":"INR",\
+                "amount_refunded":10000,"refund_status":"partial"}""");
+
+        assertThat(message.outcome()).isEqualTo(Outcome.SUCCESS);
+        assertThat(message.amount()).isEqualTo(Money.of(49_900, "INR"));
+    }
+
+    /** "refunded" is the cumulative total observed, not a refund with its own identity. */
+    @Test
+    void aRefundedStatusIsAnObservationOfTheTotal() {
+        PaymentMessage message = statusReply("""
+                {"id":"pay_Y","order_id":"order_X","status":"refunded","amount":49900,"currency":"INR",\
+                "amount_refunded":49900,"refund_status":"full"}""");
+
+        assertThat(message.outcome()).isEqualTo(Outcome.REFUNDED);
+        assertThat(message.amount()).isEqualTo(Money.of(49_900, "INR"));
+        assertThat(message.factRef()).isNull();
+    }
+
+    @ParameterizedTest(name = "status reply {0} → unparseable")
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "'{\"id\":\"pay_Y\",\"status\":\"captured\",\"currency\":\"INR\"}'",
+                "'{\"id\":\"pay_Y\",\"status\":\"captured\",\"amount\":49900}'",
+                "'{\"id\":\"pay_Y\",\"status\":\"refunded\",\"amount\":49900,\"currency\":\"INR\"}'",
+                "'{\"status\":\"captured\",\"amount\":49900,\"currency\":\"INR\"}'"
+            })
+    void statusRepliesNeedTheirFields(String body) {
+        assertThatThrownBy(() -> statusReply(body))
+                .isInstanceOf(UnparseableMessageException.class)
+                .hasMessageNotContaining("JSON");
+    }
+
     @Test
     void documentsLateAuthorization() {
         assertThat(adapter.lateSuccessAfterFailure()).isTrue();
