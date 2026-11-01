@@ -11,32 +11,30 @@ implemented, tested and merged on its own.
 3. **Implement** — inside-out: domain → application → adapters, tests alongside, build verified
    after every change (skill: `implement-feature`).
 4. **Review code** — against the design and the checklist (skill: `code-review`).
-5. **Merge and promote** — branch `feature/<ID>-<slug>` from `master` → PR into `dev` (deploys
-   to dev) → PR `dev → staging` (deploys to staging) → PR `staging → master` (deploys to
-   production). Status → `done` when it reaches `master`.
+5. **Merge and promote** — branch `feature/<ID>-<slug>` from `master` → PR into `dev` → PR
+   `dev → staging` (deploys staging) → PR `staging → master`. Status → `done` when it reaches
+   `master`.
 
 ## Backlog
 
 | ID | Feature | Milestone | Depends on | Status |
 |---|---|---|---|---|
 | F00 | Repository scaffold, toolchain, CI/CD | — | — | done |
-| F01 | Lab: Razorpay-compatible mock gateway | M0 | F00 | planned |
-| F02 | Lab: reference shop with flaw switches F1–F9 | M0 | F01 | planned |
+| F01 | Lab: Razorpay-compatible mock provider | M0 | F00 | planned |
+| F02 | Lab: reference application with flaw switches F1–F10 | M0 | F01 | planned |
 | F03 | Lab: attack scripts and results runner | M0 | F02 | planned |
-| F04 | Domain: value objects, payment targets, transactions, state machines | M1 | F00 | planned |
-| F05 | Persistence: Flyway schema, JPA entities, repositories | M1 | F04 | planned |
-| F06 | Configuration: sources, secrets, roles, fail-closed validation | M1 | F00 | planned |
+| F04 | Domain: messages, validations, outcomes, verdicts, check chain | M1 | F00 | planned |
+| F05 | Persistence: Flyway schema (`validations`, `payments`, `config`), evidence encryption | M1 | F04 | planned |
+| F06 | Configuration: connections, applications, secrets, fail-closed validation | M1 | F00 | planned |
 | F07 | Provider SPI, registry, contract test suite | M1 | F04 | planned |
-| F08 | Razorpay provider module | M1 | F07 | planned |
-| F09 | Ingress: webhook authentication and claim log (Kafka) | M1 | F06, F08 | planned |
-| F10 | Claim consumer: dedupe and record | M1 | F05, F09 | planned |
-| F11 | Confirmation: rule chain, transitions, outbox | M1 | F05, F08 | planned |
-| F12 | Verify API (checkout route) | M1 | F11 | planned |
-| F13 | Delivery worker: signing, retries, per-target ordering, passthrough | M1 | F11 | planned |
-| F14 | Recheck worker | M1 | F11 | planned |
-| F15 | Admin API: timelines, reconfirm, retry | M1 | F05 | planned |
-| F16 | Observability: metrics, alerts, dashboards, log masking | M1 | F09–F13 | planned |
-| F17 | Lab run through Aegis; M1 acceptance (T1–T19) | M1 | F03, F09–F16 | planned |
-| F18 | Runtime configuration: typed keys, admin edit, audit, live sync to all instances | M1 | F05, F15 | planned |
+| F08 | Razorpay adapter | M1 | F07 | planned |
+| F09 | Ingress: transport, signature, Kafka, acknowledgement | M1 | F06, F08 | planned |
+| F10 | Checker: inbound checks and verdicts | M1 | F05, F09 | planned |
+| F11 | Browser callback endpoint and signed redirect | M1 | F10 | planned |
+| F12 | Gateway API: validations, payment requests, status checks | M1 | F05, F08 | planned |
+| F13 | Forwarder: mTLS, Aegis signature, optional JWE, retries, ordering | M1 | F10 | planned |
+| F14 | Admin API and runtime settings | M1 | F05 | planned |
+| F15 | Observability: metrics, alerts, dashboards, log masking | M1 | F09–F13 | planned |
+| F16 | Lab run through Aegis; M1 acceptance (T1–T19) | M1 | F03, F09–F15 | planned |
 
-M2–M6 features are added here when M1 is done.
+M2–M4 features are added here when M1 is done.

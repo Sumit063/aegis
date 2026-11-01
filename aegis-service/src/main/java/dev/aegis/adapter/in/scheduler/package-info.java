@@ -1,4 +1,4 @@
 /**
- * Lease-based background workers: confirmation, recheck and delivery.
+ * Background workers: the Forwarder.
  */
 package dev.aegis.adapter.in.scheduler;

@@ -1,18 +1,21 @@
 name: CD
 
-# Branch → environment:  dev → dev · staging → staging · master → prod
+# Where each branch runs:
+#   dev     → developer machines (local/dev profile); CI only, no server deploy
+#   staging → the Ubuntu host (automatic deploy, below)
+#   master  → production; CI builds the image, deploy enabled once a production host exists
 on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-    branches: [master, staging, dev]
+    branches: [staging]
   workflow_dispatch:
     inputs:
       environment:
         description: Environment to deploy to
         required: true
         type: choice
-        options: [dev, staging, prod]
+        options: [staging]
       tag:
         description: Image tag (git SHA) to deploy
         required: true
