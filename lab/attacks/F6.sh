@@ -6,6 +6,8 @@ flaws F6
 read -r shop gw < <(order 50000)
 failed="$(pay "{\"key_id\":\"$KEY_ID\",\"order_id\":\"$gw\",\"outcome\":\"failed\",\"webhook\":false}" | jq -r .event_id)"
 pay "{\"key_id\":\"$KEY_ID\",\"order_id\":\"$gw\"}" >/dev/null
+settle
 curl -fsS -X POST "$GATEWAY/test/events/$failed/redeliver" >/dev/null
+settle
 s="$(status "$shop")"
 verdict F6 "$([[ $s == CANCELLED ]] && echo yes || echo no)" "late payment.failed after success → order $s"
