@@ -245,6 +245,97 @@ class GateTest {
         assertThat(second.validation().status()).isEqualTo(Validation.Status.PAID);
     }
 
+    /** Razorpay keeps a partially refunded payment "captured": its status reply confirms, never downgrades. */
+    @Test
+    void capturedStatusAfterAPartialRefundConfirmsTheCapture() {
+        Validation order = validation(1, "razorpay", "order_X", RS_499);
+        Gate.Result captured =
+                receive(razorpay(MessageType.WEBHOOK, "evt_1", "pay_Y", Outcome.SUCCESS, RS_499), order, null);
+        Gate.Result refunded = receive(refund("evt_r1", "rfnd_1", 10_000), captured.validation(), captured.payment());
+
+        Gate.Result status = receive(
+                razorpay(MessageType.STATUS_CHECK, "status:1", "pay_Y", Outcome.SUCCESS, RS_499),
+                refunded.validation(),
+                refunded.payment());
+
+        assertThat(refunded.payment().status()).as("a refund is not a state").isEqualTo(Outcome.SUCCESS);
+        assertThat(status.verdict()).isEqualTo(Verdict.PASSED);
+        assertThat(status.payment().status()).isEqualTo(Outcome.SUCCESS);
+        assertThat(status.payment().refunded(RS_499.currency())).isEqualTo(Money.of(10_000, "INR"));
+        assertThat(status.payment().fullyRefunded(RS_499)).isFalse();
+        assertThat(status.payment().entries().getLast().forward()).isEqualTo(Payment.Forward.NONE);
+    }
+
+    /** A full refund leaves nothing to refund; the provider's "refunded" status is an observation, not a refund. */
+    @Test
+    void aFullRefundIsExplicitAndItsStatusIsAnObservation() {
+        Validation order = validation(1, "razorpay", "order_X", RS_499);
+        Gate.Result captured =
+                receive(razorpay(MessageType.WEBHOOK, "evt_1", "pay_Y", Outcome.SUCCESS, RS_499), order, null);
+        Gate.Result full = receive(refund("evt_r1", "rfnd_1", 49_900), captured.validation(), captured.payment());
+        Gate.Result repeat = receive(refund("evt_r1", "rfnd_1", 49_900), full.validation(), full.payment());
+
+        Gate.Result observed = receive(
+                razorpay(MessageType.STATUS_CHECK, "status:1", "pay_Y", Outcome.REFUNDED, RS_499),
+                repeat.validation(),
+                repeat.payment());
+        Gate.Result more = receive(refund("evt_r2", "rfnd_2", 1), observed.validation(), observed.payment());
+
+        assertThat(full.payment().fullyRefunded(RS_499)).isTrue();
+        assertThat(repeat.repeat()).as("the same refund delivered again").isTrue();
+        assertThat(observed.verdict()).isEqualTo(Verdict.PASSED);
+        assertThat(observed.payment().refunded(RS_499.currency()))
+                .as("the observation is not counted as another refund")
+                .isEqualTo(RS_499);
+        assertThat(more.verdict()).isEqualTo(Verdict.blocked(BlockReason.AMOUNT_MISMATCH));
+    }
+
+    /** Late or contradictory events after a capture and a refund cannot move the payment backwards. */
+    @Test
+    void contradictoryLateEventsCannotDowngradeARefundedCapture() {
+        Validation order = validation(1, "razorpay", "order_X", RS_499);
+        Gate.Result captured =
+                receive(razorpay(MessageType.WEBHOOK, "evt_1", "pay_Y", Outcome.SUCCESS, RS_499), order, null);
+        Gate.Result refunded = receive(refund("evt_r1", "rfnd_1", 10_000), captured.validation(), captured.payment());
+        Payment payment = refunded.payment();
+
+        assertThat(receive(razorpay(MessageType.WEBHOOK, "evt_f", "pay_Y", Outcome.FAILED, RS_499), order, payment)
+                        .verdict())
+                .isEqualTo(Verdict.blocked(BlockReason.DOWNGRADE));
+        assertThat(receive(razorpay(MessageType.WEBHOOK, "evt_a", "pay_Y", Outcome.PENDING, RS_499), order, payment)
+                        .verdict())
+                .isEqualTo(Verdict.blocked(BlockReason.DOWNGRADE));
+        assertThat(receive(razorpay(MessageType.WEBHOOK, "evt_c", "pay_Y", Outcome.SUCCESS, RS_499), order, payment)
+                        .verdict())
+                .as("the capture again, under another event ID")
+                .isEqualTo(Verdict.blocked(BlockReason.DUPLICATE));
+        assertThat(receive(
+                                razorpay(MessageType.STATUS_CHECK, "status:f", "pay_Y", Outcome.FAILED, RS_499),
+                                order,
+                                payment)
+                        .verdict())
+                .isEqualTo(Verdict.blocked(BlockReason.DOWNGRADE));
+        assertThat(receive(
+                                razorpay(MessageType.STATUS_CHECK, "status:s", "pay_Y", Outcome.SUCCESS, RS_840),
+                                order,
+                                payment)
+                        .verdict())
+                .as("a status reply with another amount")
+                .isEqualTo(Verdict.blocked(BlockReason.AMOUNT_MISMATCH));
+    }
+
+    @Test
+    void aRefundObservationBeforeAnyCaptureIsInvalid() {
+        Validation order = validation(1, "razorpay", "order_X", RS_499);
+
+        assertThat(receive(
+                                razorpay(MessageType.STATUS_CHECK, "status:1", "pay_Y", Outcome.REFUNDED, RS_499),
+                                order,
+                                null)
+                        .verdict())
+                .isEqualTo(Verdict.blocked(BlockReason.INVALID_TRANSITION));
+    }
+
     @Test
     void aRefundWithoutACaptureIsInvalid() {
         Validation order = validation(1, "razorpay", "order_X", RS_499);

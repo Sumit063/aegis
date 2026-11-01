@@ -4,6 +4,7 @@ import static dev.aegis.domain.message.BlockReason.AMOUNT_MISMATCH;
 import static dev.aegis.domain.message.BlockReason.DOWNGRADE;
 import static dev.aegis.domain.message.BlockReason.DUPLICATE;
 import static dev.aegis.domain.message.BlockReason.DUPLICATE_PAYMENT;
+import static dev.aegis.domain.message.BlockReason.FUTURE_TIMESTAMP;
 import static dev.aegis.domain.message.BlockReason.NO_VALIDATION;
 import static dev.aegis.domain.message.BlockReason.RATE_LIMIT;
 import static dev.aegis.domain.message.BlockReason.REPLAY;
@@ -22,11 +23,21 @@ import java.util.Optional;
 /** The rules (LLD §3–§5), each one named, small and tested on its own. */
 public final class Checks {
 
-    /** Older than the provider's retry window: a replay. Messages without a send time skip this. */
-    public static final Check FRESH = c -> block(
-            c.message().sentAt() != null
-                    && c.message().sentAt().isBefore(c.now().minus(c.policy().freshness())),
-            REPLAY);
+    /**
+     * Sent within the provider's retry window (older: a replay) and not further in the future than its
+     * allowed clock skew. Both bounds are inclusive. A message without a send time skips this; adapters
+     * require the time wherever the provider's protocol carries one (e.g. Razorpay webhooks).
+     */
+    public static final Check FRESH = c -> {
+        Instant sentAt = c.message().sentAt();
+        if (sentAt == null) {
+            return Optional.empty();
+        }
+        if (sentAt.isAfter(c.now().plus(c.policy().maxClockSkew()))) {
+            return Optional.of(FUTURE_TIMESTAMP);
+        }
+        return block(sentAt.isBefore(c.now().minus(c.policy().freshness())), REPLAY);
+    };
 
     /** Refers to a validation the provider accepted. */
     public static final Check VALIDATED =
@@ -47,7 +58,11 @@ public final class Checks {
                 AMOUNT_MISMATCH);
     };
 
-    /** Refunds, partial or several, never add up to more than was paid, and are in its currency. */
+    /**
+     * Refunds, partial or several, never add up to more than was paid, and are in its currency. A refund
+     * the provider reports as news adds to the refunds already recorded; its observation of the
+     * cumulative refunded amount (a status reply) must itself be within the paid amount.
+     */
     public static final Check REFUND_WITHIN_PAYMENT = c -> {
         Money refund = c.message().amount();
         if (c.message().outcome() != Outcome.REFUNDED || refund == null) {
@@ -56,6 +71,9 @@ public final class Checks {
         Money paid = c.validation().amount();
         if (!refund.currency().equals(paid.currency())) {
             return Optional.of(AMOUNT_MISMATCH);
+        }
+        if (!c.message().type().forwarded()) {
+            return block(refund.isGreaterThan(paid), AMOUNT_MISMATCH);
         }
         Money already =
                 c.payment() == null ? Money.zero(paid.currency()) : c.payment().refunded(paid.currency());

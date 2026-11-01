@@ -42,18 +42,44 @@ class ChecksTest {
     @ParameterizedTest(name = "sent {0} h ago → replay: {1}")
     @CsvSource({"1, false", "25, false", "26, true"})
     void freshMessagesPassAndOldOnesAreReplays(long hoursAgo, boolean replay) {
-        PaymentMessage message = message(
-                "razorpay",
-                MessageType.WEBHOOK,
-                "evt_TEST",
-                "order_TEST",
-                "pay_TEST",
-                Outcome.SUCCESS,
-                null,
-                T0.minus(Duration.ofHours(hoursAgo)));
+        PaymentMessage message = sentAt(T0.minus(Duration.ofHours(hoursAgo)));
 
         assertThat(Checks.FRESH.apply(context(message, CREATED, null)))
                 .isEqualTo(replay ? Optional.of(BlockReason.REPLAY) : Optional.empty());
+    }
+
+    /** Razorpay: 25 h back, 5 min ahead; both bounds inclusive, one second beyond blocks. */
+    @ParameterizedTest(name = "sent at now {0} s → {1}")
+    @CsvSource({
+        "-90000, OK",
+        "-90001, REPLAY",
+        "0,      OK",
+        "300,    OK",
+        "301,    FUTURE_TIMESTAMP",
+        "86400,  FUTURE_TIMESTAMP"
+    })
+    void freshnessWindowBoundaries(long offsetSeconds, String expected) {
+        PaymentMessage message = sentAt(T0.plusSeconds(offsetSeconds));
+
+        assertThat(Checks.FRESH.apply(context(message, CREATED, null)))
+                .isEqualTo(expected.equals("OK") ? Optional.empty() : Optional.of(BlockReason.valueOf(expected)));
+    }
+
+    @Test
+    void theAllowedClockSkewComesFromTheProvider() {
+        Policy strictClock = new Policy(Duration.ofHours(25), true, Duration.ZERO);
+        PaymentMessage oneSecondAhead = sentAt(T0.plusSeconds(1));
+
+        assertThat(Checks.FRESH.apply(new Check.Context(
+                        oneSecondAhead, CREATED, null, List.of(), T0, strictClock, Check.Limits.NONE)))
+                .contains(BlockReason.FUTURE_TIMESTAMP);
+        assertThatThrownBy(() -> new Policy(Duration.ofHours(1), false, Duration.ofSeconds(-1)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static PaymentMessage sentAt(java.time.Instant at) {
+        return message(
+                "razorpay", MessageType.WEBHOOK, "evt_TEST", "order_TEST", "pay_TEST", Outcome.SUCCESS, null, at);
     }
 
     @Test
@@ -149,6 +175,34 @@ class ChecksTest {
         assertThat(Checks.REFUND_WITHIN_PAYMENT.apply(context(refund, CREATED, null)))
                 .isEmpty();
         assertThat(Checks.REFUND_WITHIN_PAYMENT.apply(context(foreign, CREATED, null)))
+                .contains(BlockReason.AMOUNT_MISMATCH);
+    }
+
+    /** A status reply's cumulative refunded amount is checked against what was paid, not added to refunds. */
+    @Test
+    void aRefundObservationIsTheCumulativeTotal() {
+        PaymentMessage full = message(
+                "razorpay",
+                MessageType.STATUS_CHECK,
+                "status:1",
+                "order_TEST",
+                "pay_TEST",
+                Outcome.REFUNDED,
+                RS_499,
+                T0);
+        PaymentMessage beyond = message(
+                "razorpay",
+                MessageType.STATUS_CHECK,
+                "status:2",
+                "order_TEST",
+                "pay_TEST",
+                Outcome.REFUNDED,
+                Money.of(49_901, "INR"),
+                T0);
+
+        assertThat(Checks.REFUND_WITHIN_PAYMENT.apply(context(full, CREATED, paymentWithStatus(Outcome.SUCCESS))))
+                .isEmpty();
+        assertThat(Checks.REFUND_WITHIN_PAYMENT.apply(context(beyond, CREATED, paymentWithStatus(Outcome.SUCCESS))))
                 .contains(BlockReason.AMOUNT_MISMATCH);
     }
 
