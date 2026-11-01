@@ -45,6 +45,23 @@ class PaymentPersistenceAdapter implements PaymentRepository {
     }
 
     @Override
+    public Optional<Payment> lock(Ref provider, Ref paymentRef) {
+        return rows.findByProviderAndPaymentRef(provider.value(), paymentRef.value())
+                .map(mapper::toDomain);
+    }
+
+    @Override
+    public void attachReply(long paymentId, int n, String sealedReply, int httpStatus) {
+        PaymentEntity row =
+                rows.findById(paymentId).orElseThrow(() -> new IllegalStateException("no payment " + paymentId));
+        List<StoredEntry> entries = mapper.read(row.getMessages()).stream()
+                .map(e -> e.n() == n ? e.withReply(sealedReply, httpStatus) : e)
+                .toList();
+        row.update(row.getStatus(), mapper.write(entries), row.getForwardDueAt(), clock.instant());
+        rows.saveAndFlush(row);
+    }
+
+    @Override
     public List<Payment> ofValidation(long validationId) {
         return rows.findByValidationIdOrderById(validationId).stream()
                 .map(mapper::toDomain)

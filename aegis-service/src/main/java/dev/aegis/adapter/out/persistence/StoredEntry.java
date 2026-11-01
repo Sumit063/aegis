@@ -37,6 +37,23 @@ record StoredEntry(
         }
     }
 
+    StoredEntry withReply(String reply, int httpStatus) {
+        return new StoredEntry(
+                n,
+                type,
+                messageId,
+                at,
+                outcome,
+                verdict,
+                reason,
+                duplicates,
+                headers,
+                body,
+                reply,
+                httpStatus,
+                forward);
+    }
+
     StoredEntry with(int duplicates, Forward forward) {
         return new StoredEntry(
                 n,

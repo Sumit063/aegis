@@ -75,16 +75,20 @@ application acts on the forwarded message.
 ## 4. Outbound pipeline (application-initiated only)
 
 ```
-  1. authenticate  mTLS client certificate + app key; connection belongs to this application → 403
-  2. parse         adapter.parseRequest() → merchant_ref, amount, provider_ref
+  1. authenticate  Authorization: Bearer <app key> (+ client-certificate subject if configured)
+                   → 401/403; connection belongs to this application                 → 403
+  2. parse         adapter.facts() → merchant_ref, amount, provider_ref, payment_ref   → 400
   3. checks        payment request: lock validation, status must be CREATED (not FAILED/PAID),
-                   amount equal, no payment of it still PENDING                → BLOCKED (409)
+                   amount equal, no payment of it still in flight             → BLOCKED (409);
+                   if allowed, the request is written as in flight in the same transaction
                    status check: within adapter.enquiryLimits()                 → RATE_LIMIT (429)
   4. sign/encrypt  adapter.prepare(request, secrets)
-  5. send          to the provider, with timeout; no database transaction is open
-  6. reply         verify the reply (signature or TLS); one transaction: write the request and
-                   reply into the row (validation row, or a message in the payment row); return
-                   the reply + verdict
+  5. send          to the provider (3 s connect, 10 s answer); no database transaction is open;
+                   unreachable → 503
+  6. reply         adapter.reply() verifies and reads it; one transaction: validation → one row
+                   with request + reply; payment request → reply attached to its entry; status
+                   check → the reply goes through Gate.receive and is appended. Return the
+                   provider's reply unchanged + X-Aegis-Verdict: PASSED | BLOCKED <REASON>
 ```
 
 "In flight" = a payment of this validation with a passed payment request and no final answer yet
