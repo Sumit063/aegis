@@ -99,7 +99,7 @@ pull-request code — and the repository is private, so forks cannot reach it.
 
 ```
 /home/aegis/
-  aegis/staging/    compose.yaml, .env (staging secrets, mode 600)
+  aegis/staging/    compose.yaml, .env (staging secrets, mode 600), aegis.yaml (connections, applications)
   aegis/prod/       (when production moves here or to its own host)
   backups/          nightly PostgreSQL dumps per environment (M1)
  container aegis-runner   GitHub Actions runner (restarts automatically)

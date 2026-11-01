@@ -31,6 +31,12 @@ if [[ ! -f .env ]]; then
   echo "✓ created $DEPLOY_DIR/.env (profile $ENV_NAME, ports $HTTP_PORT/$MANAGEMENT_PORT)"
 fi
 
+# Connections and applications: created once from the template, then edited on the host.
+if [[ ! -f aegis.yaml ]]; then
+  cp "$SRC_DIR/aegis.example.yaml" aegis.yaml
+  echo "✓ created $DEPLOY_DIR/aegis.yaml (no connections yet)"
+fi
+
 env_value() { grep "^$1=" .env | cut -d= -f2- || true; }
 set_tag() {
   if grep -q '^AEGIS_TAG=' .env; then
