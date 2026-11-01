@@ -14,6 +14,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -46,9 +50,18 @@ class CallbackIT extends IntegrationTest {
                 HttpResponse.BodyHandlers.ofString());
     }
 
-    private static String expectedLocation(String ref, String verdict) {
-        return "http://shop.test/return?ref=" + ref + "&verdict=" + verdict + "&signature="
-                + Scenario.sign(SHOP_SECRET, ref + "." + verdict);
+    /** Checks the redirect: target, result, payment binding, fresh timestamp, valid signature. */
+    private static void assertSignedResult(HttpResponse<String> response, String ref, String verdict) {
+        String location = response.headers().firstValue("Location").orElseThrow();
+        assertThat(location).startsWith("http://shop.test/return?ref=" + ref + "&verdict=" + verdict + "&payment=");
+        Map<String, String> query = new HashMap<>();
+        for (String pair : URI.create(location).getQuery().split("&")) {
+            query.put(pair.substring(0, pair.indexOf('=')), pair.substring(pair.indexOf('=') + 1));
+        }
+        assertThat(Long.parseLong(query.get("ts"))).isCloseTo(Instant.now().getEpochSecond(), Offset.offset(60L));
+        assertThat(query.get("signature"))
+                .isEqualTo(Scenario.sign(
+                        SHOP_SECRET, ref + "." + verdict + "." + query.get("payment") + "." + query.get("ts")));
     }
 
     @Test
@@ -61,17 +74,17 @@ class CallbackIT extends IntegrationTest {
                 post("/in/razorpay/callback", Scenario.callback(orderId, paymentId, RAZORPAY_KEY_SECRET));
 
         assertThat(response.statusCode()).isEqualTo(303);
-        assertThat(response.headers().firstValue("Location")).contains(expectedLocation("SHOP-" + orderId, "PASSED"));
+        assertSignedResult(response, "SHOP-" + orderId, "PASSED");
         assertThat(validations.find(order.id()).orElseThrow().status()).isEqualTo(Validation.Status.PAID);
         var entry = payments.ofValidation(order.id()).getFirst().entries().getFirst();
         assertThat(entry.type()).isEqualTo(MessageType.CALLBACK);
         assertThat(entry.verdict()).isEqualTo(Verdict.PASSED);
 
         // The browser posts it again (back button): same message, same answer, nothing new stored.
-        assertThat(post("/in/razorpay/callback", Scenario.callback(orderId, paymentId, RAZORPAY_KEY_SECRET))
-                        .headers()
-                        .firstValue("Location"))
-                .contains(expectedLocation("SHOP-" + orderId, "PASSED"));
+        assertSignedResult(
+                post("/in/razorpay/callback", Scenario.callback(orderId, paymentId, RAZORPAY_KEY_SECRET)),
+                "SHOP-" + orderId,
+                "PASSED");
         assertThat(payments.ofValidation(order.id())
                         .getFirst()
                         .entries()
@@ -91,8 +104,8 @@ class CallbackIT extends IntegrationTest {
         String smallSigned = Scenario.callback("order_small", "pay_y", RAZORPAY_KEY_SECRET);
         HttpResponse<String> swapped = post("/in/razorpay/callback", smallSigned.replace("order_small", orderId));
 
-        assertThat(unsigned.headers().firstValue("Location")).contains(expectedLocation("unknown", "BLOCKED"));
-        assertThat(swapped.headers().firstValue("Location")).contains(expectedLocation("unknown", "BLOCKED"));
+        assertSignedResult(unsigned, "unknown", "BLOCKED");
+        assertSignedResult(swapped, "unknown", "BLOCKED");
     }
 
     @Test

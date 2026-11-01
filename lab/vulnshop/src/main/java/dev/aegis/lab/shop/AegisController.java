@@ -71,14 +71,24 @@ class AegisController {
                         : Instant.ofEpochSecond(original.path("created_at").asLong(0)))));
     }
 
-    /** Where Aegis sends the customer's browser after checking the Checkout result. Display only. */
+    /**
+     * Where Aegis sends the customer's browser after checking the Checkout result. Display only: the
+     * shop fulfils from forwarded messages, never from this redirect.
+     */
     @GetMapping("/aegis/return")
     ResponseEntity<String> returned(
-            @RequestParam String ref, @RequestParam String verdict, @RequestParam String signature) {
-        boolean genuine = Hmac.matches(properties.aegisSecret(), ref + "." + verdict, signature);
+            @RequestParam String ref,
+            @RequestParam String verdict,
+            @RequestParam String payment,
+            @RequestParam long ts,
+            @RequestParam String signature) {
+        boolean recent =
+                Duration.between(Instant.ofEpochSecond(ts), Instant.now()).abs().compareTo(Duration.ofMinutes(10)) <= 0;
+        boolean genuine = recent
+                && Hmac.matches(properties.aegisSecret(), ref + "." + verdict + "." + payment + "." + ts, signature);
         return genuine
                 ? ResponseEntity.ok("Order " + ref + ": " + verdict)
-                : ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("bad Aegis signature");
+                : ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("bad or expired Aegis result");
     }
 
     private boolean fromAegis(String timestamp, String body, String signature) {

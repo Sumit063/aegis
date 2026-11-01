@@ -9,3 +9,6 @@ logging:
 
 aegis:
   environment: prod
+  network:
+    # Production destinations must be https; set true only for a private network you control.
+    allow-plain-http: false

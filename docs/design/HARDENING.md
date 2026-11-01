@@ -88,7 +88,7 @@ Batches: **H1** payment facts · **H2** database-enforced identities · **H3** a
 |---|---|---|---|
 | Never trust client fields; signature | HMAC(order\|payment), same Checker path | none (lab F7, F8) | — |
 | Redirect target | from configuration only (no open redirect) | none | — |
-| Signed result bound and expiring | `HMAC(ref.verdict)`, no expiry, no payment binding | add payment ref and timestamp | H4 |
+| Signed result bound and expiring | `HMAC(ref.verdict)`, no expiry, no payment binding | done: `payment` + `ts` signed, 10 min at the shop | H4 ✓ |
 | Redirect alone never fulfils | documented; shop fulfils from forwards only | none | — |
 
 ## 8. Resource exhaustion and tenancy
@@ -99,7 +99,7 @@ Batches: **H1** payment facts · **H2** database-enforced identities · **H3** a
 | Per-connection rate/concurrency limits | none | done: rate 429 + in-progress 503 per connection | H3 ✓ |
 | Tenant scoping on the Gateway API | connection must belong to the caller | none (T16) | — |
 | Admin separate from runtime | separate key and path; operator scope is global (documented) | — | — |
-| SSRF via destinations | URLs come only from operator configuration | startup policy: block metadata/link-local; explicit flag for private networks | H4 |
+| SSRF via destinations | URLs come only from operator configuration | done: `Destinations` at startup and per send; https in prod | H4 ✓ |
 
 ## 9. Operations
 
@@ -113,9 +113,9 @@ Batches: **H1** payment facts · **H2** database-enforced identities · **H3** a
 
 ## 10. Failure-injection suite (review items 1–26)
 
-Covered today: 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 22, 14, 15 (by message ID), 16, 17, 18, 20 (lease), 21,
+Covered today: 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 22, 24, 14, 15 (by message ID), 16, 17, 18, 20 (lease), 21,
 23 (Gateway), 25 (leases and Kafka offsets). To add: 19 (documented
-merchant idempotency), 24 (H4), 26 (H5).
+merchant idempotency), 26 (H5).
 
 ## 11. Performance
 

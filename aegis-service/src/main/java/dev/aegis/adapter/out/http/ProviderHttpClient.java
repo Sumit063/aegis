@@ -1,6 +1,7 @@
 package dev.aegis.adapter.out.http;
 
 import dev.aegis.application.port.out.ProviderClientPort;
+import dev.aegis.provider.spi.Destinations;
 import dev.aegis.provider.spi.PreparedCall;
 import java.io.IOException;
 import java.net.http.HttpClient;
@@ -29,6 +30,8 @@ class ProviderHttpClient implements ProviderClientPort {
 
     @Override
     public Response send(PreparedCall call) {
+        // Re-checked at send time: the name may resolve differently than at startup (DNS rebinding).
+        Destinations.check(call.uri(), true);
         HttpRequest.Builder request = HttpRequest.newBuilder(call.uri())
                 .timeout(Duration.ofSeconds(10))
                 .method(
