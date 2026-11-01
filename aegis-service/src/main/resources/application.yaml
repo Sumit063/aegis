@@ -38,6 +38,10 @@ management:
     health:
       probes:
         enabled: true
+      group:
+        # Ready means the database answers, not just that the process started.
+        readiness:
+          include: readinessState,db
   info:
     env:
       enabled: true
@@ -45,8 +49,11 @@ management:
     tags:
       environment: ${aegis.environment}
 
+# What is running where; read by deploy/check.sh after every deploy.
 info:
   environment: ${aegis.environment}
+  version: ${AEGIS_VERSION:local}
+  roles: ${aegis.roles}
 
 aegis:
   roles: ${AEGIS_ROLES:ingress,checker,gateway,forwarder,admin}

@@ -31,6 +31,7 @@ scripts/setup-dev.sh            # once per clone: installs git hooks
 ./mvnw test                     # unit + architecture tests (fast)
 ./mvnw verify                   # everything: format check, tests, integration tests, coverage
 docker compose -f deploy/compose.yaml -f deploy/compose.local.yaml up -d postgres kafka   # local infra
+scripts/check.sh [staging]      # validate a running environment (CICD.md §3)
 ```
 
 Integration tests need a running Docker daemon.
