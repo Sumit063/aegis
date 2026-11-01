@@ -74,17 +74,28 @@ class AegisControllerTest {
     }
 
     @Test
-    void returnPageChecksAegisSignature() {
-        String signature = Hmac.sha256Hex(AEGIS_SECRET, "SHOP-1.PASSED");
+    void returnPageChecksAegisSignatureBindingAndAge() {
+        long now = Instant.now().getEpochSecond();
+        long old = now - 3600;
+        String signature = Hmac.sha256Hex(AEGIS_SECRET, "SHOP-1.PASSED.7." + now);
+        String oldSignature = Hmac.sha256Hex(AEGIS_SECRET, "SHOP-1.PASSED.7." + old);
+
         assertThat(controller(shop())
-                        .returned("SHOP-1", "PASSED", signature)
+                        .returned("SHOP-1", "PASSED", "7", now, signature)
                         .getStatusCode()
                         .value())
                 .isEqualTo(200);
         assertThat(controller(shop())
-                        .returned("SHOP-1", "PASSED", "forged")
+                        .returned("SHOP-1", "PASSED", "8", now, signature)
                         .getStatusCode()
                         .value())
+                .as("bound to its payment")
+                .isEqualTo(401);
+        assertThat(controller(shop())
+                        .returned("SHOP-1", "PASSED", "7", old, oldSignature)
+                        .getStatusCode()
+                        .value())
+                .as("expired")
                 .isEqualTo(401);
     }
 }

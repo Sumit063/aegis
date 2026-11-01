@@ -77,9 +77,10 @@ stored as `BLOCKED UNSUPPORTED` (acknowledged to the provider, never forwarded).
 
 **Browser callback** (`/in/{connection}/callback`) runs steps 1–13 inline (no Kafka). The customer is
 waiting and the browser retries nothing. It then redirects (`303`) to the application's return URL
-with `ref` (the validation's merchant reference), `verdict` and
-`signature = hex(HMAC_SHA256(app_secret, ref + "." + verdict))`. The page is display only; the
-application acts on the forwarded message.
+with `ref` (the validation's merchant reference), `verdict`, `payment` (Aegis's payment ID), `ts`
+(epoch seconds) and `signature = hex(HMAC_SHA256(app_secret, ref + "." + verdict + "." + payment +
+"." + ts))`. Applications reject results older than a few minutes. The page is display only; the
+application acts on the forwarded message. The target is always the configured `return-url`.
 
 ## 4. Outbound pipeline (application-initiated only)
 

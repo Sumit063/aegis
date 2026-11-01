@@ -70,18 +70,25 @@ public class CallbackService implements HandleCallbackUseCase {
                 directory.application(connection.application()).orElseThrow();
         String ref = result.merchantRef() == null ? UNKNOWN : result.merchantRef();
         String verdict = result.verdict().passed() ? "PASSED" : "BLOCKED";
-        return returnUrl(application, ref, verdict);
+        return returnUrl(
+                application, ref, verdict, result.paymentId(), clock.instant().getEpochSecond());
     }
 
-    /** {@code return-url?ref=…&verdict=…&signature=hex(HMAC(signing secret, ref + "." + verdict))}. */
-    static URI returnUrl(Application application, String ref, String verdict) {
+    /**
+     * {@code return-url?ref=…&verdict=…&payment=…&ts=…&signature=hex(HMAC(signing secret,
+     * ref + "." + verdict + "." + payment + "." + ts))}. Bound to Aegis's payment (the forwarded
+     * message's ID starts with it) and timestamped, so a captured redirect cannot be reused for another
+     * payment or replayed later; the application rejects results older than a few minutes.
+     */
+    static URI returnUrl(Application application, String ref, String verdict, long paymentId, long timestamp) {
         if (application.returnUrl() == null) {
             throw new IllegalStateException("application " + application.name() + " has no return-url");
         }
         String base = application.returnUrl().toString();
-        String signature = Hmac.sha256Hex(application.signingSecret(), ref + "." + verdict);
+        String signed = ref + "." + verdict + "." + paymentId + "." + timestamp;
+        String signature = Hmac.sha256Hex(application.signingSecret(), signed);
         return URI.create(base + (base.contains("?") ? "&" : "?") + "ref=" + encode(ref) + "&verdict=" + verdict
-                + "&signature=" + signature);
+                + "&payment=" + paymentId + "&ts=" + timestamp + "&signature=" + signature);
     }
 
     private static String encode(String value) {
