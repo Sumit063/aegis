@@ -43,6 +43,32 @@ class ForwardPersistenceAdapter implements ForwardRepository {
     }
 
     @Override
+    public boolean reforward(long paymentId, int n, Instant now) {
+        PaymentEntity row = rows.lockById(paymentId).orElse(null);
+        if (row == null) {
+            return false;
+        }
+        List<StoredEntry> entries = mapper.read(row.getMessages());
+        boolean eligible = entries.stream()
+                .anyMatch(e -> e.n() == n
+                        && "PASSED".equals(e.verdict())
+                        && MessageType.valueOf(e.type()).forwarded());
+        if (!eligible) {
+            return false;
+        }
+        List<StoredEntry> updated = entries.stream()
+                .map(e -> e.n() == n ? e.with(e.duplicates(), StoredEntry.Forward.of(PENDING)) : e)
+                .toList();
+        row.update(row.getStatus(), mapper.write(updated), now, now);
+        return true;
+    }
+
+    @Override
+    public void release(long paymentId, Instant due) {
+        rows.lockById(paymentId).ifPresent(row -> row.update(row.getStatus(), row.getMessages(), due, due));
+    }
+
+    @Override
     public void record(long paymentId, int n, Attempt attempt) {
         PaymentEntity row =
                 rows.lockById(paymentId).orElseThrow(() -> new IllegalStateException("no payment " + paymentId));

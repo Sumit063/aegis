@@ -42,6 +42,7 @@ env_value() { grep "^$1=" .env | cut -d= -f2- || true; }
 # Secrets added after an environment was created are generated once, here, and never leave the host.
 ensure_secret() { grep -q "^$1=" .env || { echo "$1=$2" >> .env; echo "✓ generated $1"; }; }
 ensure_secret AEGIS_EVIDENCE_KEY "$(openssl rand -base64 32)"
+ensure_secret AEGIS_ADMIN_API_KEY "$(openssl rand -hex 32)"
 set_tag() {
   if grep -q '^AEGIS_TAG=' .env; then
     sed -i.bak "s/^AEGIS_TAG=.*/AEGIS_TAG=$1/" .env && rm -f .env.bak

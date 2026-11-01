@@ -100,9 +100,11 @@ own `.env` as environment variables, with no defaults outside `local`. Developer
 the Ubuntu host runs staging; production gets its own host later without design changes.
 
 ### D10 — Runtime settings in PostgreSQL with in-memory snapshots
-Operational settings (forward backoff, per-application pause, log levels) are editable through Admin
-without a deployment. Stored in `config`; each instance holds an immutable snapshot refreshed by
-`LISTEN/NOTIFY` plus a 30-second poll. Secrets, addresses and certificates are never runtime-editable.
+Operational settings (today: per-application pause of forwarding) are editable through Admin without
+a deployment. Stored in `config`, versioned with who changed them; each instance holds an immutable
+snapshot reloaded every 5 seconds. Secrets, addresses and certificates are never runtime-editable.
+- **Rejected:** `LISTEN/NOTIFY` (an extra long-lived connection per instance for a few seconds of
+  latency that no setting needs).
 
 ### D11 — Branching: environment branches with promotion
 `master` = production, `staging`, `dev`. Work on `feature/<ID>-<slug>` from `master`, PR into

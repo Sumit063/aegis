@@ -1,6 +1,7 @@
 package dev.aegis.application.service;
 
 import dev.aegis.application.port.in.ForwardUseCase;
+import dev.aegis.application.port.in.SettingsUseCase;
 import dev.aegis.application.port.out.Application;
 import dev.aegis.application.port.out.DirectoryPort;
 import dev.aegis.application.port.out.EvidenceCipherPort;
@@ -42,10 +43,12 @@ public class ForwardService implements ForwardUseCase {
     static final Duration FIRST_RETRY = Duration.ofSeconds(1);
     static final Duration MAX_RETRY = Duration.ofMinutes(10);
     static final Duration GIVE_UP_AFTER = Duration.ofHours(72);
+    static final Duration PAUSED_RECHECK = Duration.ofSeconds(5);
 
     private static final Logger log = LoggerFactory.getLogger(ForwardService.class);
 
     private final ForwardRepository queue;
+    private final SettingsUseCase settings;
     private final ValidationRepository validations;
     private final DirectoryPort directory;
     private final ForwardClientPort client;
@@ -55,6 +58,7 @@ public class ForwardService implements ForwardUseCase {
 
     public ForwardService(
             ForwardRepository queue,
+            SettingsUseCase settings,
             ValidationRepository validations,
             DirectoryPort directory,
             ForwardClientPort client,
@@ -62,6 +66,7 @@ public class ForwardService implements ForwardUseCase {
             TransactionTemplate tx,
             Clock clock) {
         this.queue = queue;
+        this.settings = settings;
         this.validations = validations;
         this.directory = directory;
         this.client = client;
@@ -100,6 +105,12 @@ public class ForwardService implements ForwardUseCase {
         Validation validation = payment.validationId() == null
                 ? null
                 : validations.find(payment.validationId()).orElse(null);
+        if (application != null && settings.current().pausedApplications().contains(application.name())) {
+            // Held by an operator: nothing is lost, it is looked at again shortly.
+            tx.executeWithoutResult(
+                    status -> queue.release(payment.paymentId(), clock.instant().plus(PAUSED_RECHECK)));
+            return 0;
+        }
         int delivered = 0;
         for (Pending message : payment.pending()) {
             Instant now = clock.instant();
