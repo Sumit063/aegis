@@ -5,19 +5,24 @@ import dev.aegis.domain.message.MessageType;
 import dev.aegis.domain.message.Outcome;
 import dev.aegis.domain.message.PaymentMessage;
 import dev.aegis.domain.message.Verdict;
+import dev.aegis.domain.shared.Money;
 import dev.aegis.domain.shared.Ref;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Currency;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /**
- * One payment and every message about it, in arrival order (one database row, LLD §7).
+ * One payment (one provider transaction) and every message about it, in arrival order (one database
+ * row, LLD §7). Entries are an append-only history: a later refund never erases the capture before it.
  *
- * <p>{@code status} is the latest outcome that passed, or null if none has. {@code id},
- * {@code validationId} and {@code paymentRef} are null for untrusted or unmatched messages.
+ * <p>{@code status} is the payment's current state: the last state change that passed, or null if
+ * none has. {@code id}, {@code validationId} and {@code paymentRef} are null for untrusted or
+ * unmatched messages.
  */
 public record Payment(Long id, Long validationId, Ref provider, Ref paymentRef, Outcome status, List<Entry> entries) {
 
@@ -29,7 +34,12 @@ public record Payment(Long id, Long validationId, Ref provider, Ref paymentRef, 
         FAILED
     }
 
-    /** One distinct message. Repeats of the same message only increase {@code duplicates}. */
+    /**
+     * One distinct message. Repeats of the same message only increase {@code duplicates}.
+     *
+     * @param amount the amount the message states (for a refund, the refunded amount), or null
+     * @param factRef which fact of its kind it reports (e.g. the refund ID), or null
+     */
     public record Entry(
             int n,
             MessageType type,
@@ -38,7 +48,9 @@ public record Payment(Long id, Long validationId, Ref provider, Ref paymentRef, 
             Outcome outcome,
             Verdict verdict,
             int duplicates,
-            Forward forward) {
+            Forward forward,
+            Money amount,
+            Ref factRef) {
 
         public Entry {
             Objects.requireNonNull(type, "type");
@@ -47,6 +59,22 @@ public record Payment(Long id, Long validationId, Ref provider, Ref paymentRef, 
             Objects.requireNonNull(outcome, "outcome");
             Objects.requireNonNull(verdict, "verdict");
             Objects.requireNonNull(forward, "forward");
+        }
+
+        public Entry(
+                int n,
+                MessageType type,
+                Ref messageId,
+                Instant at,
+                Outcome outcome,
+                Verdict verdict,
+                int duplicates,
+                Forward forward) {
+            this(n, type, messageId, at, outcome, verdict, duplicates, forward, null, null);
+        }
+
+        Entry withDuplicates(int count) {
+            return new Entry(n, type, messageId, at, outcome, verdict, count, forward, amount, factRef);
         }
     }
 
@@ -76,22 +104,12 @@ public record Payment(Long id, Long validationId, Ref provider, Ref paymentRef, 
     /** Records a re-delivery of a message already seen; nothing else changes. */
     public Payment countRepeat(Ref messageId) {
         List<Entry> updated = entries.stream()
-                .map(e -> e.messageId().equals(messageId)
-                        ? new Entry(
-                                e.n(),
-                                e.type(),
-                                e.messageId(),
-                                e.at(),
-                                e.outcome(),
-                                e.verdict(),
-                                e.duplicates() + 1,
-                                e.forward())
-                        : e)
+                .map(e -> e.messageId().equals(messageId) ? e.withDuplicates(e.duplicates() + 1) : e)
                 .toList();
         return new Payment(id, validationId, provider, paymentRef, status, updated);
     }
 
-    /** Appends a message with its verdict; a passed message moves the status forward. */
+    /** Appends a message with its verdict; a passed state change becomes the payment's status. */
     public Payment append(PaymentMessage message, Verdict verdict) {
         Forward forward = verdict.passed() && message.type().forwarded() ? Forward.PENDING : Forward.NONE;
         List<Entry> updated = new ArrayList<>(entries);
@@ -103,7 +121,9 @@ public record Payment(Long id, Long validationId, Ref provider, Ref paymentRef, 
                 message.outcome(),
                 verdict,
                 0,
-                forward));
+                forward,
+                message.amount(),
+                message.factRef()));
         Outcome next = verdict.passed() ? advance(message) : status;
         return new Payment(id, validationId, provider, paymentRef, next, updated);
     }
@@ -116,9 +136,30 @@ public record Payment(Long id, Long validationId, Ref provider, Ref paymentRef, 
         return requested && (status == null || status == Outcome.PENDING);
     }
 
+    /** Whether a capture ever passed, whatever happened after (refunds keep this true). */
+    public boolean wasCaptured() {
+        return passed().anyMatch(e -> e.outcome() == Outcome.SUCCESS);
+    }
+
+    /** The sum of refunds that passed, in {@code currency}. */
+    public Money refunded(Currency currency) {
+        return passed().filter(e -> e.outcome() == Outcome.REFUNDED && e.amount() != null)
+                .map(Entry::amount)
+                .reduce(Money.zero(currency), Money::plus);
+    }
+
+    /** Whether a passed message already reported this outcome with this fact reference. */
+    public boolean hasFact(Outcome outcome, Ref factRef) {
+        return passed().anyMatch(e -> e.outcome() == outcome && Objects.equals(e.factRef(), factRef));
+    }
+
     /** Entries of one type, e.g. earlier status checks when enforcing provider limits. */
     public List<Entry> entries(MessageType type) {
         return entries.stream().filter(e -> e.type() == type).toList();
+    }
+
+    private Stream<Entry> passed() {
+        return entries.stream().filter(e -> e.verdict().passed());
     }
 
     // The request's own acknowledgement is not news about the payment; only the provider's answers are.

@@ -13,7 +13,11 @@ import java.time.Instant;
 final class Fixtures {
 
     static final Instant T0 = Instant.parse("2026-11-01T10:00:00Z");
-    static final Duration RAZORPAY_FRESHNESS = Duration.ofHours(25);
+    /** Razorpay: 24 h of retries, late authorization documented. */
+    static final Policy RAZORPAY = new Policy(Duration.ofHours(25), true);
+    /** A provider without late success (NPCI-like). */
+    static final Policy STRICT = new Policy(Duration.ofHours(1), false);
+
     static final Check.Limits NPCI = new Check.Limits(Duration.ofSeconds(90), 3, Duration.ofHours(2));
     static final Money RS_499 = Money.of(49_900, "INR");
     static final Money RS_840 = Money.of(84_000, "INR");

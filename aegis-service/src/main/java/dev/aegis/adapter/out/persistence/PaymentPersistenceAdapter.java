@@ -45,6 +45,11 @@ class PaymentPersistenceAdapter implements PaymentRepository {
     }
 
     @Override
+    public Optional<Long> validationIdOf(Ref provider, Ref paymentRef) {
+        return rows.findValidationId(provider.value(), paymentRef.value());
+    }
+
+    @Override
     public Optional<Payment> lock(Ref provider, Ref paymentRef) {
         return rows.findByProviderAndPaymentRef(provider.value(), paymentRef.value())
                 .map(mapper::toDomain);

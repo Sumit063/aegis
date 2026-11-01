@@ -160,6 +160,11 @@ exploit reproducible.
 Integer minor units + ISO currency, never floats; database identity keys; `timestamptz` in UTC.
 
 ### D21 — Razorpay specifics
+- **Late authorization** is documented by Razorpay (a payment shown as failed can be authorized and
+  captured later), so the adapter allows SUCCESS after FAILED (D24).
+- `refund.processed` carries the refund's ID (fact reference) and amount; a refund without them is
+  unparseable. Event types are an explicit allowlist; disputes and settlements are `UNSUPPORTED`
+  until modelled (open assumption: their semantics are not used for any decision).
 - A **signed Checkout callback is a success** (Razorpay signs only successful payments); an unsigned
   failure form is blocked as `BAD_SIGNATURE`, and the failure reaches the application by webhook.
 - `payment.authorized` is **PENDING**, not success: Razorpay auto-refunds uncaptured payments.
@@ -188,6 +193,23 @@ transaction commits, and only then is the request sent; the reply is attached af
 - **Applications authenticate** with a per-application API key (bearer) and, where configured, a
   client-certificate subject checked behind the TLS-terminating proxy; a connection is usable only
   by the application it belongs to.
+
+### D24 — Payment states change by an explicit table, facts by identity
+A payment's state changes only by the transitions in `domain.check.Transitions` (LLD §3 step 12);
+there is no ordering of outcomes to reason from. Three identities: the **message** (provider event
+ID, dedupes retries), the **payment** (provider transaction), the **fact** (outcome + fact reference,
+e.g. each refund's ID).
+- **Why:** a ranking cannot express that a second partial refund is new, that a refund needs a prior
+  capture, or that SUCCESS after FAILED is real for one provider and invalid for another.
+- Late success after failure is a **provider policy** declared by the adapter (Razorpay documents
+  late authorization), never assumed.
+- A second payment succeeding for a validation already paid is `DUPLICATE_PAYMENT`: stored, alerted,
+  not forwarded as news to fulfil (the merchant refunds it).
+- Authenticated events Aegis does not interpret are `UNSUPPORTED`: acknowledged, stored, never forwarded.
+- Refunds carry their own amount; all refunds of a payment never exceed what was paid. History is
+  append-only, so a refund never erases the capture.
+- **Rejected:** numeric ranking of outcomes (M1 first cut); forwarding unsupported events with
+  outcome OTHER.
 
 ## Design review log
 

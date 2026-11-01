@@ -45,7 +45,7 @@ From an external review of correctness, abuse resistance and recovery; each is o
 
 | ID | Hardening | Status |
 |---|---|---|
-| H1 | Payment facts: explicit transitions, fact identity (partial refunds, reversals), unsupported events not forwarded | planned |
+| H1 | Payment facts: explicit transitions, fact identity (partial refunds, reversals), unsupported events not forwarded | done |
 | H2 | Database-enforced identities: message IDs and business facts unique by constraint | planned |
 | H3 | Abuse limits: bounded forgery quarantine, per-connection rate and concurrency limits, poison records to a dead-letter topic | planned |
 | H4 | Callback and destinations: expiring, payment-bound signed results; destination URL policy (SSRF) | planned |

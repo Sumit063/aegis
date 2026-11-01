@@ -22,7 +22,10 @@ record StoredEntry(
         String body,
         String reply,
         Integer httpStatus,
-        Forward forward) {
+        Forward forward,
+        Long amount,
+        String currency,
+        String factRef) {
 
     /** Delivery to the application: state, attempts so far, and when to try next. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -51,7 +54,10 @@ record StoredEntry(
                 body,
                 reply,
                 httpStatus,
-                forward);
+                forward,
+                amount,
+                currency,
+                factRef);
     }
 
     StoredEntry with(int duplicates, Forward forward) {
@@ -68,6 +74,9 @@ record StoredEntry(
                 body,
                 reply,
                 httpStatus,
-                forward);
+                forward,
+                amount,
+                currency,
+                factRef);
     }
 }

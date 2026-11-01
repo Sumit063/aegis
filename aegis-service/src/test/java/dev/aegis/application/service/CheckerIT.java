@@ -208,4 +208,33 @@ class CheckerIT extends IntegrationTest {
             }
         }
     }
+
+    /** Two partial refunds are two facts, both forwarded; one more than was paid is blocked (H1). */
+    @Test
+    void partialRefundsArePassedEachOnce() {
+        String orderId = unique("order_");
+        String paymentId = unique("pay_");
+        Scenario.order(validations, tx, orderId, 49_900);
+        checker.check(webhook(
+                event("payment.captured", orderId, paymentId, 49_900, Instant.now()), unique("evt_"), Instant.now()));
+
+        Result first = checker.check(webhook(refund(paymentId, "rfnd_1", 20_000), unique("evt_"), Instant.now()));
+        Result sameAgain = checker.check(webhook(refund(paymentId, "rfnd_1", 20_000), unique("evt_"), Instant.now()));
+        Result second = checker.check(webhook(refund(paymentId, "rfnd_2", 29_900), unique("evt_"), Instant.now()));
+        Result tooMuch = checker.check(webhook(refund(paymentId, "rfnd_3", 1), unique("evt_"), Instant.now()));
+
+        assertThat(first.verdict()).isEqualTo(Verdict.PASSED);
+        assertThat(sameAgain.verdict()).isEqualTo(Verdict.blocked(BlockReason.DUPLICATE));
+        assertThat(second.verdict()).isEqualTo(Verdict.PASSED);
+        assertThat(tooMuch.verdict()).isEqualTo(Verdict.blocked(BlockReason.AMOUNT_MISMATCH));
+        Payment payment = payments.find(first.paymentId()).orElseThrow();
+        assertThat(payment.wasCaptured()).isTrue();
+        assertThat(payment.entries()).filteredOn(e -> e.verdict().passed()).hasSize(3);
+    }
+
+    private static String refund(String paymentId, String refundId, long amount) {
+        return """
+                {"entity":"event","event":"refund.processed","contains":["refund"],"payload":{"refund":{"entity":\
+                {"id":"%s","payment_id":"%s","amount":%d,"currency":"INR"}}},"created_at":%d}""".formatted(refundId, paymentId, amount, Instant.now().getEpochSecond());
+    }
 }

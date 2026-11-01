@@ -33,6 +33,9 @@ public interface PaymentJpaRepository extends JpaRepository<PaymentEntity, Long>
 
     List<PaymentEntity> findByValidationIdOrderById(Long validationId);
 
+    @Query("select p.validationId from PaymentEntity p where p.provider = :provider and p.paymentRef = :paymentRef")
+    Optional<Long> findValidationId(@Param("provider") String provider, @Param("paymentRef") String paymentRef);
+
     @Query(value = """
                     SELECT p.* FROM payments p LEFT JOIN validations v ON v.id = p.validation_id
                     WHERE p.payment_ref = :ref OR v.merchant_ref = :ref OR v.provider_ref = :ref

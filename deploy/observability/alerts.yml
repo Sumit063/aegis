@@ -16,10 +16,16 @@ groups:
           summary: "{{ $labels.provider }}: more than 5 messages with a bad signature in 5 minutes (GET /admin/blocked)."
 
       - alert: AmountOrDowngrade
-        expr: sum by (provider, reason) (increase(aegis_messages_total{reason=~"AMOUNT_MISMATCH|DOWNGRADE|NO_VALIDATION"}[5m])) > 0
+        expr: sum by (provider, reason) (increase(aegis_messages_total{reason=~"AMOUNT_MISMATCH|DOWNGRADE|NO_VALIDATION|INVALID_TRANSITION"}[5m])) > 0
         labels: { severity: critical }
         annotations:
           summary: "{{ $labels.provider }}: {{ $labels.reason }} — a genuine message disagreed with the validation (GET /admin/blocked)."
+
+      - alert: PaidTwice
+        expr: sum by (provider) (increase(aegis_messages_total{type!~"PAY_REQUEST|STATUS_CHECK",reason="DUPLICATE_PAYMENT"}[15m])) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.provider }}: a customer paid an order that was already paid — refund the second payment (GET /admin/blocked)."
 
       - alert: ForwardFailed
         expr: sum by (application) (increase(aegis_forward_total{result="failed"}[15m])) > 0
