@@ -73,6 +73,9 @@ Ingress verifies the signature, writes the message to Kafka, and only then ackno
 - Settings: idempotent producer, `acks=all`; single broker uses `log.flush.interval.messages=1` so
   an acknowledgement means "on disk". The consumer commits offsets after the database commit; the
   unique keys absorb redelivery.
+- Records carry the body sealed with the evidence key: Kafka's disk never holds clear text.
+- Producer timeouts are 2–3 s, so a broker outage becomes a fast 503 (the provider retries) rather
+  than a missed acknowledgement deadline.
 
 ### D7 — PostgreSQL
 | Need | PostgreSQL feature |

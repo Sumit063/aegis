@@ -34,11 +34,14 @@ an `X-Aegis-Verdict` header. Public: `/in/**` only. Private (mTLS): `/gw/**`, `/
 ```
 Ingress (synchronous, before acknowledging)
   1. transport     mTLS / allow-list, if the connection requires it        → 403
-  2. decrypt       if the provider encrypts                                → 400
+  2. decrypt       if the provider encrypts; failure = not verified        → 401
   3. signature     adapter.verify(raw bytes, headers, secrets)             → 401 (still sent to Kafka,
                    flagged, so the Checker stores it as BLOCKED BAD_SIGNATURE)
-  4. Kafka         write raw message (key = provider_ref)                 → 503 if not stored
+  4. Kafka         write the message, body sealed with the evidence key
+                   (key = connection:payment_ref, so one payment stays in order) → 503 if not stored
   5. acknowledge   adapter.ack(): 2xx or <Ack/>
+
+Bodies over 64 KB → 413. `Cookie` and `Authorization` headers are not kept.
 Checker (Kafka consumer, one database transaction per message)
   6. parse         adapter.parse() → message_id, provider_ref, payment_ref, outcome, amount, sent_at
   7. lock          SELECT validation WHERE provider_ref = ? FOR UPDATE

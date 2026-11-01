@@ -37,7 +37,7 @@ import tools.jackson.databind.json.JsonMapper;
  * (hex HMAC-SHA256 of the body), server-to-server payment requests and NPCI-like status-check limits.
  * It exercises every part of the SPI that Razorpay does not use.
  */
-public final class ExampleAdapter implements ProviderAdapter {
+public class ExampleAdapter implements ProviderAdapter {
 
     public static final String SIGNATURE = "X-Example-Signature";
     private static final JsonMapper JSON = JsonMapper.builder().build();
