@@ -17,6 +17,9 @@ public interface PaymentRepository {
 
     Optional<Payment> find(long id);
 
+    /** Locks the row for this payment reference if it exists. */
+    Optional<Payment> lock(Ref provider, Ref paymentRef);
+
     /** The payments of a validation, to check for one still in flight. */
     List<Payment> ofValidation(long validationId);
 
@@ -25,6 +28,12 @@ public interface PaymentRepository {
      * the entries added in this transaction; earlier entries keep what they have.
      */
     Payment save(Payment payment, Map<Ref, Evidence> evidence);
+
+    /**
+     * Records the provider's synchronous reply on an outbound request already stored as entry
+     * {@code n} (the request was written first, so it counted as in flight while being sent).
+     */
+    void attachReply(long paymentId, int n, String sealedReply, int httpStatus);
 
     /** Stores a message that failed before it could be trusted, in a row of its own. */
     Payment insertUntrusted(Payment payment, Evidence evidence);
