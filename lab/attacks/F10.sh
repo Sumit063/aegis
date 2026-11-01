@@ -11,5 +11,6 @@ sleep 4
 code="$(send_webhook "$(jq -r .body <<<"$captured")" \
   -H "X-Razorpay-Signature: $(jq -r '.headers["X-Razorpay-Signature"]' <<<"$captured")" \
   -H "X-Razorpay-Event-Id: $event")"
+settle
 n="$(fulfilments "$shop")"
 verdict F10 "$([[ $n -gt 1 ]] && echo yes || echo no)" "captured webhook replayed later → HTTP $code, fulfilments $n"

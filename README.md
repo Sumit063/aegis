@@ -77,8 +77,8 @@ lab/run.sh                                                # Exploit Lab: every a
 
 | # | Milestone | Status |
 |---|---|---|
-| M0 | Exploit Lab — reproduce the CVE classes in Docker ([results](lab/RESULTS.md)) | done |
-| M1 | Core gateway with Razorpay | design done |
+| M0 | Exploit Lab — reproduce the CVE classes in Docker ([results](lab/RESULTS.md)): 10/10 exploited directly, 10/10 blocked through Aegis | done |
+| M1 | Core gateway with Razorpay ([acceptance](docs/features/F16-acceptance.md)) | done |
 | M2 | Stripe and Paytm-style adapters; load and failure tests | planned |
 | M3 | NPCI-style XML adapters (BBPS, UPI) against a simulator | planned |
 | M4 | Partner API protection and rate limits | planned |
