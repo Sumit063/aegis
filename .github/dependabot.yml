@@ -1,7 +1,9 @@
+# Updates enter the normal flow: PR into dev, then promoted to staging and master.
 version: 2
 updates:
   - package-ecosystem: maven
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
     commit-message:
@@ -11,13 +13,19 @@ updates:
         patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
     commit-message:
       prefix: ci
   - package-ecosystem: docker
     directories: [/, /deploy/runner]
+    target-branch: dev
     schedule:
       interval: weekly
     commit-message:
       prefix: build
+    ignore:
+      # Stay on the Java LTS line (25); move to the next LTS deliberately.
+      - dependency-name: eclipse-temurin
+        update-types: ["version-update:semver-major"]
