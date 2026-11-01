@@ -58,6 +58,31 @@ class ObservabilityIT extends IntegrationTest {
                 .containsPattern("aegis_messages_total\\{.*reason=\"BAD_SIGNATURE\".*\\}");
     }
 
+    /** A caller's request ID is kept (and echoed) so one ID follows the message through the logs. */
+    @Test
+    void echoesTheCorrelationId() throws Exception {
+        HttpResponse<String> response = http.send(
+                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/in/razorpay"))
+                        .header("X-Request-Id", "trace-12345678")
+                        .header("X-Razorpay-Signature", "forged")
+                        .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.headers().firstValue("X-Request-Id")).contains("trace-12345678");
+        assertThat(http.send(
+                                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/in/razorpay"))
+                                        .header("X-Request-Id", "bad id with spaces")
+                                        .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                                        .build(),
+                                HttpResponse.BodyHandlers.ofString())
+                        .headers()
+                        .firstValue("X-Request-Id")
+                        .orElseThrow())
+                .as("an unsafe ID is replaced")
+                .doesNotContain(" ");
+    }
+
     /** Invariant 9: neither secrets nor message content reach the logs, even for a forgery. */
     @Test
     void logsCarryReferencesOnly(CapturedOutput output) throws Exception {

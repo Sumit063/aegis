@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 
 /**
@@ -65,15 +66,18 @@ public class IngressService implements ReceiveProviderMessageUseCase {
         Instant receivedAt = clock.instant();
         RawMessage clear = Safely.decrypt(adapter, channel, message, connection);
         boolean verified = clear != null && Safely.verify(adapter, channel, clear, connection);
+        UUID id = UUID.randomUUID();
+        String correlation = MDC.get("correlationId");
         IngressRecord record = new IngressRecord(
-                UUID.randomUUID(),
+                id,
                 connection.name(),
                 channel,
                 receivedAt,
                 verified,
                 verified ? key(adapter, channel, clear, connection, receivedAt) : connection.name(),
                 message.headers(),
-                cipher.seal(message.body()));
+                cipher.seal(message.body()),
+                correlation == null ? id.toString() : correlation);
         if (!verified && !forgeries.tryAcquire(connection.name())) {
             // Over the evidence quota: refused and counted, not stored, so a flood of forgeries cannot
             // fill Kafka, the database or the disk (HARDENING §3).
