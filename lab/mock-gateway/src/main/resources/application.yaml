@@ -1,0 +1,26 @@
+# Lab only. Accounts are overridden by lab/compose.yaml; these defaults serve tests and local runs.
+server:
+  port: 8090
+
+spring:
+  application:
+    name: mock-gateway
+  threads:
+    virtual:
+      enabled: true
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+mock:
+  accounts:
+    shop:
+      key-id: rzp_test_lab
+      key-secret: lab-key-secret-not-a-real-secret-0001
+      webhook-secret: lab-webhook-secret-not-a-real-secret
+      webhook-url: http://localhost:8091/webhooks/razorpay
