@@ -158,6 +158,8 @@ Integer minor units + ISO currency, never floats; database identity keys; `times
 | R5 | Application status checks could break NPCI limits and cause penalties | Limits enforced in Aegis per adapter |
 | R6 | A message replayed after its row is purged would look new | Retention (180 d) far exceeds every freshness window |
 | R9 | One row per payment could grow without bound under repeated messages | Repeats only increase a counter; bodies capped at 64 KB |
+| R10 | A late PENDING after SUCCESS (out-of-order webhooks) would move a payment backwards; a late SUCCESS after FAILED is genuine (late authorization) | Downgrade by outcome rank; SUCCESS and FAILED share a rank (found in F04) |
+| R11 | A payment request's own acknowledgement set the status to PENDING, so NPCI's deemed answer looked like a duplicate | Acknowledgements are not news; in flight = passed request without a final answer (found in F04) |
 | R7 | Leaked HMAC secret | Accepted residual risk with mitigations (D18) |
 | R8 | Retrying a payment request while the first is pending could debit twice | `DUPLICATE_PAYMENT` while in flight |
 
