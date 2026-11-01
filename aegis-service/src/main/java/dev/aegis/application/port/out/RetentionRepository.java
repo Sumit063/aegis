@@ -7,4 +7,7 @@ public interface RetentionRepository {
 
     /** @return rows deleted (payments, then validations no payment refers to) */
     int purgeOlderThan(Instant cutoff, int batch);
+
+    /** Deletes rows of untrusted or unsupported messages (no payment reference, no validation). */
+    int purgeUntrustedOlderThan(Instant cutoff, int batch);
 }

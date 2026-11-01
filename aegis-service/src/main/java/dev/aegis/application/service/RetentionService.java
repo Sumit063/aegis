@@ -17,6 +17,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class RetentionService implements RetentionUseCase {
 
     static final Duration RETENTION = Duration.ofDays(180);
+    /** Rejected traffic is security telemetry, not evidence of money: kept a week. */
+    static final Duration UNTRUSTED_RETENTION = Duration.ofDays(7);
+
     private static final int BATCH = 1000;
     private static final Logger log = LoggerFactory.getLogger(RetentionService.class);
 
@@ -33,8 +36,13 @@ public class RetentionService implements RetentionUseCase {
     @Override
     public int purge() {
         var cutoff = clock.instant().minus(RETENTION);
+        var untrustedCutoff = clock.instant().minus(UNTRUSTED_RETENTION);
         int total = 0;
         int deleted;
+        do {
+            deleted = tx.execute(status -> repository.purgeUntrustedOlderThan(untrustedCutoff, BATCH));
+            total += deleted;
+        } while (deleted == BATCH);
         do {
             deleted = tx.execute(status -> repository.purgeOlderThan(cutoff, BATCH));
             total += deleted;
