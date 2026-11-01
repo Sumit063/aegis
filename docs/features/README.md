@@ -32,7 +32,7 @@ Built in this order; each row is one branch and one PR.
 | F05 | Persistence: Flyway schema, entities, repositories, evidence encryption | M1 | F04, F06 | done |
 | F09 | Ingress: signature, Kafka, acknowledgement | M1 | F05, F08 | done |
 | F10 | Checker: inbound checks and verdicts | M1 | F09 | done |
-| F11 | Browser callback and signed redirect | M1 | F10 | planned |
+| F11 | Browser callback and signed redirect | M1 | F10 | done |
 | F12 | Gateway API: validations, payment requests, status checks | M1 | F05, F08 | planned |
 | F13 | Forwarder: Aegis signature, optional JWE, retries, ordering | M1 | F10 | planned |
 | F14 | Admin API and runtime settings | M1 | F05 | planned |
