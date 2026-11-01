@@ -24,7 +24,7 @@ Built in this order; each row is one branch and one PR.
 | F00 | Repository scaffold, toolchain, CI/CD, layered package structure | — | — | done |
 | F04 | Domain: messages, validations, payments, verdicts, checks, `Gate` | M1 | F00 | done |
 | F01 | Lab: Razorpay-compatible mock gateway | M0 | F00 | done |
-| F02 | Lab: reference shop with flaw switches F1–F10 | M0 | F01 | planned |
+| F02 | Lab: reference shop with flaw switches F1–F10 | M0 | F01 | done |
 | F03 | Lab: attack scripts, `lab/run.sh`, results, CI job | M0 | F02 | planned |
 | F06 | Configuration: connections, applications, secrets, fail-closed validation | M1 | F00 | planned |
 | F07 | Provider SPI, registry, contract test suite | M1 | F04, F06 | planned |

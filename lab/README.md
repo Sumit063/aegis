@@ -6,6 +6,7 @@ Reproducible attacks against a realistic merchant integration, run once **direct
 | Part | What it is | Port |
 |---|---|---|
 | [`mock-gateway`](mock-gateway) | Razorpay-compatible provider: orders, payments, signed webhooks and Checkout results | 8090 |
+| [`vulnshop`](vulnshop) | Reference merchant; each integration flaw F1–F10 is a switch (`shop.flaws`) | 8091 |
 
 Everything here uses fake, lab-only secrets and runs on a private Docker network. Nothing in the
 lab talks to a real gateway.
@@ -22,4 +23,19 @@ lab talks to a real gateway.
 
 ```bash
 ./mvnw -pl lab/mock-gateway spring-boot:run      # http://localhost:8090
+```
+
+## Vulnshop
+
+| Endpoint | Used when | Purpose |
+|---|---|---|
+| `POST /orders {"amount"}` | always | place an order; creates the gateway order (directly, or through Aegis) |
+| `GET /orders/{id}` | always | the order's state and `fulfilments` (the measure of loss) |
+| `POST /webhooks/razorpay` | direct | the gateway's webhook, verified by the shop |
+| `POST /payment/callback?order=SHOP-n` | direct | the browser's Checkout result, verified by the shop |
+| `POST /aegis/messages` | behind Aegis | messages Aegis forwarded, verified by `X-Aegis-Signature` |
+| `GET /aegis/return` | behind Aegis | where Aegis redirects the browser; display only |
+
+```bash
+./mvnw -pl lab/vulnshop spring-boot:run -Dspring-boot.run.arguments=--shop.flaws=F5,F9
 ```
