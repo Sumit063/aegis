@@ -83,5 +83,5 @@ an unverified message ID. They can never touch a genuine payment.
 
 ## 5. Done when
 - [x] All tests above pass; `./mvnw verify` green
-- [x] Docs updated (LLD §3 downgrade rule, DECISIONS R10)
+- [x] Docs updated (LLD §3 and §4, DECISIONS R10–R11, ARCHITECTURE §2)
 - [x] Code review checklist passed
