@@ -6,6 +6,7 @@ import java.sql.SQLException;
 import java.sql.SQLTransientException;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.TopicPartition;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -36,9 +37,16 @@ class CheckerErrorHandling {
 
     static final String DEAD_LETTERS = "aegis.inbound.dlt";
 
+    /** Replicated like the ingress topic ({@code aegis.kafka.*}). */
     @Bean
-    NewTopic deadLetterTopic() {
-        return TopicBuilder.name(DEAD_LETTERS).partitions(6).replicas(1).build();
+    NewTopic deadLetterTopic(
+            @Value("${aegis.kafka.replicas:1}") int replicas,
+            @Value("${aegis.kafka.min-insync-replicas:1}") int minInsync) {
+        return TopicBuilder.name(DEAD_LETTERS)
+                .partitions(6)
+                .replicas(replicas)
+                .config("min.insync.replicas", String.valueOf(minInsync))
+                .build();
     }
 
     @Bean
