@@ -21,6 +21,7 @@
   <modules>
     <module>aegis-service</module>
     <module>lab/mock-gateway</module>
+    <module>lab/vulnshop</module>
   </modules>
 
   <properties>
