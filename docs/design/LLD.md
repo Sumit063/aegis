@@ -139,7 +139,7 @@ holds the exact bytes and headers (case-insensitive lookup). Adapters are found 
 
 | Provider | verify | ack | Outcome mapping |
 |---|---|---|---|
-| Razorpay (M1) | HMAC-SHA256: webhook body with webhook secret; callback `order_id\|payment_id` with key secret | 2xx | `captured`→SUCCESS, `failed`→FAILED, `authorized`→PENDING, refund processed→REFUNDED |
+| Razorpay (M1) | HMAC-SHA256: webhook body with webhook secret; callback `order_id\|payment_id` with key secret | 2xx | `payment.captured`/`order.paid`→SUCCESS, `payment.failed`→FAILED, `payment.authorized`→PENDING, `refund.processed`→REFUNDED (amount not compared), others→OTHER; signed callback→SUCCESS |
 | Stripe (M2) | HMAC-SHA256 over `t.body`, 5-minute tolerance | 2xx | `payment_intent.succeeded`→SUCCESS, … |
 | Paytm-style (M2) | checksum with merchant key | 2xx | `TXN_SUCCESS`→SUCCESS, … |
 | BBPS / UPI (M3) | XML-DSig with the switch's public certificate | `<Ack/>` | SUCCESS / FAILURE / PENDING (deemed) / reversal |

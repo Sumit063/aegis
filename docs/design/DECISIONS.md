@@ -154,6 +154,16 @@ exploit reproducible.
 ### D20 — Money, IDs, time
 Integer minor units + ISO currency, never floats; database identity keys; `timestamptz` in UTC.
 
+### D21 — Razorpay specifics
+- A **signed Checkout callback is a success** (Razorpay signs only successful payments); an unsigned
+  failure form is blocked as `BAD_SIGNATURE`, and the failure reaches the application by webhook.
+- `payment.authorized` is **PENDING**, not success: Razorpay auto-refunds uncaptured payments.
+- A refund's amount is the refunded part, so it is **not compared** with the order amount.
+- **Live keys only in production**, test keys everywhere else: startup fails otherwise, so a
+  non-production environment can never move real money.
+- A webhook without `X-Razorpay-Event-Id` gets the ID `body:<sha256 of body>`, so a replay of the
+  same bytes is still the same message.
+
 ## Design review log
 
 | # | Issue | Fix |
