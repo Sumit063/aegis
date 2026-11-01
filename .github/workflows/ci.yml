@@ -62,11 +62,33 @@ jobs:
           path: aegis-service/target/aegis.jar
           retention-days: 7
 
+  lab:
+    name: Exploit Lab
+    # Every exploit must succeed against the flawed shop, fail against the careful one, and
+    # (from M1) fail through Aegis. lab/run.sh exits non-zero otherwise.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Run every attack
+        run: lab/run.sh
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-results
+          path: lab/RESULTS.md
+          retention-days: 14
+
   image:
     name: Container image
     # Every push to an environment branch produces an image; CD decides where it goes.
     if: github.event_name == 'push'
-    needs: [commit-lint, build]
+    needs: [commit-lint, build, lab]
     runs-on: ubuntu-latest
     permissions:
       contents: read

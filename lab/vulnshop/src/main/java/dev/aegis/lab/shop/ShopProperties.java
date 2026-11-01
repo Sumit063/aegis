@@ -14,6 +14,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param keySecret Checkout signature key (direct mode only)
  * @param webhookSecret webhook signature key (direct mode only)
  * @param aegisSecret key Aegis signs forwarded messages with (Aegis mode only)
+ * @param flaws flaws switched on at start (see {@link Flaws})
  * @param memory how long webhook event IDs are remembered, and the oldest webhook accepted
  */
 @ConfigurationProperties("shop")
@@ -29,9 +30,5 @@ public record ShopProperties(
     public ShopProperties {
         flaws = flaws == null || flaws.isEmpty() ? Set.of() : Set.copyOf(EnumSet.copyOf(flaws));
         memory = memory == null ? Duration.ofDays(7) : memory;
-    }
-
-    public boolean has(Flaw flaw) {
-        return flaws.contains(flaw);
     }
 }

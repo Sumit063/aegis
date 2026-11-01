@@ -17,14 +17,16 @@ import org.springframework.stereotype.Component;
 public class Shop {
 
     private final ShopProperties properties;
+    private final Flaws flaws;
     private final Map<String, ShopOrder> orders = new ConcurrentHashMap<>();
     private final Map<String, Instant> seenEvents = new ConcurrentHashMap<>();
     private final Map<Channel, Set<String>> fulfilledPayments =
             Map.of(Channel.CALLBACK, ConcurrentHashMap.newKeySet(), Channel.WEBHOOK, ConcurrentHashMap.newKeySet());
     private final AtomicInteger sequence = new AtomicInteger();
 
-    public Shop(ShopProperties properties) {
+    public Shop(ShopProperties properties, Flaws flaws) {
         this.properties = properties;
+        this.flaws = flaws;
     }
 
     ShopOrder add(long amount, String gatewayOrderId, String id) {
@@ -52,30 +54,30 @@ public class Shop {
             return "ignored: unknown order";
         }
         ShopOrder order = found.get();
-        if (!properties.has(Flaw.F3) && event.amount() != null && event.amount() != order.amount()) {
+        if (!flaws.has(Flaw.F3) && event.amount() != null && event.amount() != order.amount()) {
             return "ignored: amount differs";
         }
         if (event.channel() == Channel.WEBHOOK) {
             Instant now = Instant.now();
             seenEvents.values().removeIf(at -> at.isBefore(now.minus(properties.memory())));
-            if (!properties.has(Flaw.F10)
+            if (!flaws.has(Flaw.F10)
                     && event.createdAt() != null
                     && event.createdAt().isBefore(now.minus(properties.memory()))) {
                 return "ignored: too old";
             }
-            if (!properties.has(Flaw.F5) && seenEvents.putIfAbsent(event.eventId(), now) != null) {
+            if (!flaws.has(Flaw.F5) && seenEvents.putIfAbsent(event.eventId(), now) != null) {
                 return "ignored: event already processed";
             }
         }
         if (!event.captured()) {
-            if (order.status() == ShopOrder.Status.PAID && !properties.has(Flaw.F6)) {
+            if (order.status() == ShopOrder.Status.PAID && !flaws.has(Flaw.F6)) {
                 return "ignored: order already paid";
             }
             orders.put(order.id(), order.cancelled());
             return "cancelled " + order.id();
         }
         Channel other = event.channel() == Channel.CALLBACK ? Channel.WEBHOOK : Channel.CALLBACK;
-        if (!properties.has(Flaw.F9) && fulfilledPayments.get(other).contains(event.paymentId())) {
+        if (!flaws.has(Flaw.F9) && fulfilledPayments.get(other).contains(event.paymentId())) {
             return "ignored: payment already fulfilled";
         }
         fulfilledPayments.get(event.channel()).add(event.paymentId());
@@ -85,6 +87,6 @@ public class Shop {
 
     // F3: the webhook names its own order (notes); F8: the callback URL names the order.
     private boolean trustsHint(Channel channel) {
-        return channel == Channel.WEBHOOK ? properties.has(Flaw.F3) : properties.has(Flaw.F8);
+        return channel == Channel.WEBHOOK ? flaws.has(Flaw.F3) : flaws.has(Flaw.F8);
     }
 }

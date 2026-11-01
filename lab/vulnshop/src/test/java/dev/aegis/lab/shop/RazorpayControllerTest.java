@@ -17,10 +17,12 @@ class RazorpayControllerTest {
 
     private static RazorpayController controller(Flaw... flaws) {
         ShopProperties properties =
-                new ShopProperties(null, null, KEY_SECRET, WEBHOOK_SECRET, null, Set.of(flaws), Duration.ofDays(7));
-        Shop shop = new Shop(properties);
+                new ShopProperties(null, null, KEY_SECRET, WEBHOOK_SECRET, null, Set.of(), Duration.ofDays(7));
+        Flaws switched = new Flaws(Set.of(flaws));
+        Shop shop = new Shop(properties, switched);
         shop.add(49_900, "order_A", "SHOP-1");
-        return new RazorpayController(properties, shop, JsonMapper.builder().build());
+        return new RazorpayController(
+                properties, switched, shop, JsonMapper.builder().build());
     }
 
     private static String event(String name) {
