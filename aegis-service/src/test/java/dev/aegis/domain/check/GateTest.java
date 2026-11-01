@@ -1,9 +1,10 @@
 package dev.aegis.domain.check;
 
 import static dev.aegis.domain.check.Fixtures.NPCI;
-import static dev.aegis.domain.check.Fixtures.RAZORPAY_FRESHNESS;
+import static dev.aegis.domain.check.Fixtures.RAZORPAY;
 import static dev.aegis.domain.check.Fixtures.RS_499;
 import static dev.aegis.domain.check.Fixtures.RS_840;
+import static dev.aegis.domain.check.Fixtures.STRICT;
 import static dev.aegis.domain.check.Fixtures.T0;
 import static dev.aegis.domain.check.Fixtures.message;
 import static dev.aegis.domain.check.Fixtures.validation;
@@ -18,6 +19,7 @@ import dev.aegis.domain.message.Verdict;
 import dev.aegis.domain.payment.Payment;
 import dev.aegis.domain.payment.Validation;
 import dev.aegis.domain.shared.Money;
+import dev.aegis.domain.shared.Ref;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -32,7 +34,7 @@ class GateTest {
     }
 
     private static Gate.Result receive(PaymentMessage message, Validation validation, Payment payment) {
-        return Gate.receive(message, validation, payment, T0, RAZORPAY_FRESHNESS);
+        return Gate.receive(message, validation, payment, T0, RAZORPAY);
     }
 
     @Test
@@ -91,7 +93,7 @@ class GateTest {
                 bill,
                 sent.payment(),
                 at30s,
-                Duration.ofHours(1));
+                STRICT);
         assertThat(deemed.verdict()).as("NPCI's deemed answer is news").isEqualTo(Verdict.PASSED);
         assertThat(deemed.payment().isInFlight()).isTrue();
 
@@ -106,7 +108,7 @@ class GateTest {
                 message("bbps", MessageType.STATUS_CHECK, "aegis:chk-2", "R1", "T1", Outcome.SUCCESS, null, at2m);
         assertThat(Gate.permit(check, bill, deemed.payment(), List.of(), at2m, NPCI))
                 .isEqualTo(Verdict.PASSED);
-        Gate.Result checked = Gate.receive(check, bill, deemed.payment(), at2m, Duration.ofHours(1));
+        Gate.Result checked = Gate.receive(check, bill, deemed.payment(), at2m, STRICT);
         assertThat(checked.verdict()).isEqualTo(Verdict.PASSED);
         assertThat(checked.validation().status()).isEqualTo(Validation.Status.PAID);
 
@@ -115,7 +117,7 @@ class GateTest {
                 checked.validation(),
                 checked.payment(),
                 at2m,
-                Duration.ofHours(1));
+                STRICT);
         assertThat(late.verdict()).isEqualTo(Verdict.blocked(BlockReason.DUPLICATE));
         assertThat(Gate.permit(retry, checked.validation(), null, List.of(late.payment()), at2m, NPCI))
                 .isEqualTo(Verdict.blocked(BlockReason.DUPLICATE_PAYMENT));
@@ -141,7 +143,7 @@ class GateTest {
                             bill,
                             payment,
                             at,
-                            Duration.ofHours(1))
+                            STRICT)
                     .payment();
         }
         PaymentMessage fourth =
@@ -207,15 +209,92 @@ class GateTest {
         assertThat(swapped.validation().status()).isEqualTo(Validation.Status.CREATED);
     }
 
+    /** Authenticated events Aegis does not interpret are recorded, never forwarded as payment news. */
     @Test
-    void uninterpretedEventsAreCheckedForFreshnessOnly() {
+    void unsupportedEventsAreRecordedNotForwarded() {
         PaymentMessage settlement =
                 message("razorpay", MessageType.WEBHOOK, "evt_set", null, null, Outcome.OTHER, null, T0);
 
         Gate.Result result = receive(settlement, null, null);
 
-        assertThat(result.verdict()).isEqualTo(Verdict.PASSED);
+        assertThat(result.verdict()).isEqualTo(Verdict.blocked(BlockReason.UNSUPPORTED));
         assertThat(result.payment().status()).isNull();
+        assertThat(result.payment().entries().getFirst().forward()).isEqualTo(Payment.Forward.NONE);
+    }
+
+    /** Partial refunds are separate facts; together they never exceed what was paid. */
+    @Test
+    void partialRefundsAddUpToAtMostThePayment() {
+        Validation order = validation(1, "razorpay", "order_X", RS_499);
+        Gate.Result captured =
+                receive(razorpay(MessageType.WEBHOOK, "evt_1", "pay_Y", Outcome.SUCCESS, RS_499), order, null);
+
+        Gate.Result first = receive(refund("evt_r1", "rfnd_1", 20_000), captured.validation(), captured.payment());
+        Gate.Result again = receive(refund("evt_r1b", "rfnd_1", 20_000), first.validation(), first.payment());
+        Gate.Result second = receive(refund("evt_r2", "rfnd_2", 29_900), again.validation(), again.payment());
+        Gate.Result tooMuch = receive(refund("evt_r3", "rfnd_3", 100), second.validation(), second.payment());
+
+        assertThat(first.verdict()).isEqualTo(Verdict.PASSED);
+        assertThat(again.verdict()).as("same refund, other event ID").isEqualTo(Verdict.blocked(BlockReason.DUPLICATE));
+        assertThat(second.verdict()).as("a second partial refund").isEqualTo(Verdict.PASSED);
+        assertThat(tooMuch.verdict()).isEqualTo(Verdict.blocked(BlockReason.AMOUNT_MISMATCH));
+        assertThat(second.payment().refunded(RS_499.currency())).isEqualTo(RS_499);
+        assertThat(second.payment().wasCaptured())
+                .as("a refund never erases the capture")
+                .isTrue();
+        assertThat(second.validation().status()).isEqualTo(Validation.Status.PAID);
+    }
+
+    @Test
+    void aRefundWithoutACaptureIsInvalid() {
+        Validation order = validation(1, "razorpay", "order_X", RS_499);
+
+        assertThat(receive(refund("evt_r", "rfnd_1", 100), order, null).verdict())
+                .isEqualTo(Verdict.blocked(BlockReason.INVALID_TRANSITION));
+    }
+
+    /** The customer paid twice: the second success is not news to fulfil; it is blocked and alerted. */
+    @Test
+    void aSecondPaymentForAPaidValidationIsNotForwardedAsNews() {
+        Validation order = validation(1, "razorpay", "order_X", RS_499);
+        Gate.Result first =
+                receive(razorpay(MessageType.WEBHOOK, "evt_1", "pay_A", Outcome.SUCCESS, RS_499), order, null);
+
+        Gate.Result second = receive(
+                razorpay(MessageType.WEBHOOK, "evt_2", "pay_B", Outcome.SUCCESS, RS_499), first.validation(), null);
+
+        assertThat(second.verdict()).isEqualTo(Verdict.blocked(BlockReason.DUPLICATE_PAYMENT));
+        assertThat(second.payment().entries().getFirst().forward()).isEqualTo(Payment.Forward.NONE);
+    }
+
+    /** Without a documented late success, SUCCESS after FAILED is not accepted. */
+    @Test
+    void lateSuccessNeedsTheProviderPolicy() {
+        Validation order = validation(1, "npci", "R1", RS_499);
+        PaymentMessage failed =
+                message("npci", MessageType.ASYNC_RESPONSE, "m1", "R1", "T1", Outcome.FAILED, RS_499, T0);
+        PaymentMessage success =
+                message("npci", MessageType.ASYNC_RESPONSE, "m2", "R1", "T1", Outcome.SUCCESS, RS_499, T0);
+        Gate.Result first = Gate.receive(failed, order, null, T0, STRICT);
+
+        Gate.Result late = Gate.receive(success, first.validation(), first.payment(), T0, STRICT);
+
+        assertThat(late.verdict()).isEqualTo(Verdict.blocked(BlockReason.INVALID_TRANSITION));
+        assertThat(late.validation().status()).isEqualTo(Validation.Status.CREATED);
+    }
+
+    private static PaymentMessage refund(String eventId, String refundId, long amount) {
+        return new PaymentMessage(
+                Ref.of("razorpay"),
+                MessageType.WEBHOOK,
+                Ref.of(eventId),
+                Ref.of("order_X"),
+                Ref.of("pay_Y"),
+                Outcome.REFUNDED,
+                Money.of(amount, "INR"),
+                T0,
+                T0,
+                Ref.of(refundId));
     }
 
     @Test

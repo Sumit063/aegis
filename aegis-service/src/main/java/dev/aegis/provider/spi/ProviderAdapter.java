@@ -1,6 +1,7 @@
 package dev.aegis.provider.spi;
 
 import dev.aegis.domain.check.Check;
+import dev.aegis.domain.check.Policy;
 import dev.aegis.domain.message.PaymentMessage;
 import java.time.Duration;
 import java.time.Instant;
@@ -37,6 +38,19 @@ public interface ProviderAdapter {
 
     /** The provider's retry window: an older message is a replay. */
     Duration freshness();
+
+    /**
+     * Whether the provider documents that a payment it reported FAILED can still succeed later (late
+     * authorization). Off by default: SUCCESS after FAILED is then an invalid transition.
+     */
+    default boolean lateSuccessAfterFailure() {
+        return false;
+    }
+
+    /** The provider behaviour the domain checks depend on. */
+    default Policy policy() {
+        return new Policy(freshness(), lateSuccessAfterFailure());
+    }
 
     /** The provider's status-check limits. */
     default Check.Limits enquiryLimits() {

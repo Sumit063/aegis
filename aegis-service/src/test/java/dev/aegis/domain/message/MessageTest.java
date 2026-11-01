@@ -36,14 +36,6 @@ class MessageTest {
     }
 
     @Test
-    void staleOutcomesRankBelowLaterOnes() {
-        assertThat(Outcome.PENDING.rank()).isLessThan(Outcome.SUCCESS.rank());
-        assertThat(Outcome.SUCCESS.rank()).isEqualTo(Outcome.FAILED.rank());
-        assertThat(Outcome.REFUNDED.rank()).isGreaterThan(Outcome.SUCCESS.rank());
-        assertThat(Outcome.OTHER.rank()).isZero();
-    }
-
-    @Test
     void messageNeedsItsIdentityButNotOptionalFields() {
         Instant now = Instant.parse("2026-11-01T10:00:00Z");
         PaymentMessage message = new PaymentMessage(

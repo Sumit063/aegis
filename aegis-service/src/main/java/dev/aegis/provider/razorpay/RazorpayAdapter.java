@@ -84,6 +84,15 @@ public final class RazorpayAdapter implements ProviderAdapter {
         }
     }
 
+    /**
+     * Razorpay documents late authorization: a payment shown as failed (the bank answered late) can
+     * later be authorized and captured. So SUCCESS after FAILED is a real transition here.
+     */
+    @Override
+    public boolean lateSuccessAfterFailure() {
+        return true;
+    }
+
     /** Razorpay retries a webhook for 24 hours; anything older is a replay. */
     @Override
     public Duration freshness() {
@@ -134,6 +143,8 @@ public final class RazorpayAdapter implements ProviderAdapter {
         String name = event.path("event").asString("");
         JsonNode payment = event.at("/payload/payment/entity");
         JsonNode refund = event.at("/payload/refund/entity");
+        // Explicit allowlist. Anything else authenticated is OTHER: stored, acknowledged, never
+        // forwarded as payment news (disputes and settlements included, until modelled).
         Outcome outcome = switch (name) {
             case "payment.captured", "order.paid" -> Outcome.SUCCESS;
             case "payment.failed" -> Outcome.FAILED;
@@ -149,8 +160,16 @@ public final class RazorpayAdapter implements ProviderAdapter {
         if (outcome != Outcome.OTHER && paymentId == null) {
             throw new UnparseableMessageException(name + " without a payment");
         }
-        // A refund's amount is the refunded part, not the order amount, so it is not compared.
-        Money amount = outcome == Outcome.REFUNDED || !payment.has("amount") ? null : money(payment);
+        Money amount = payment.has("amount") ? money(payment) : null;
+        Ref factRef = null;
+        if (outcome == Outcome.REFUNDED) {
+            // Each refund is its own fact, identified by its refund ID, carrying the refunded amount.
+            factRef = ref(refund.path("id").asString(null));
+            if (factRef == null || !refund.path("amount").isIntegralNumber()) {
+                throw new UnparseableMessageException("refund.processed without refund id or amount");
+            }
+            amount = money(refund);
+        }
         Instant sentAt = event.has("created_at")
                 ? Instant.ofEpochSecond(event.get("created_at").asLong())
                 : null;
@@ -158,12 +177,13 @@ public final class RazorpayAdapter implements ProviderAdapter {
                 provider,
                 MessageType.WEBHOOK,
                 eventId(message),
-                ref(payment.path("order_id").asString(null)),
+                ref(payment.path("order_id").asString(refund.path("order_id").asString(null))),
                 paymentId,
                 outcome,
                 amount,
                 sentAt,
-                receivedAt);
+                receivedAt,
+                factRef);
     }
 
     @Override

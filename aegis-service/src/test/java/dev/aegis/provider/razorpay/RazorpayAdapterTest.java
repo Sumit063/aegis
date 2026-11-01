@@ -59,8 +59,9 @@ class RazorpayAdapterTest {
         assertThat(message.sentAt()).isNotNull();
     }
 
+    /** Each refund is its own fact: its refund ID and the refunded amount (partial refunds). */
     @Test
-    void aRefundIsNotComparedWithTheOrderAmount() {
+    void aRefundCarriesItsOwnIdentityAndAmount() {
         String body = """
                 {"event":"refund.processed","created_at":1,"payload":{"refund":{"entity":
                 {"id":"rfnd_1","payment_id":"pay_Y","amount":100,"currency":"INR"}}}}""";
@@ -72,7 +73,27 @@ class RazorpayAdapterTest {
 
         assertThat(message.outcome()).isEqualTo(Outcome.REFUNDED);
         assertThat(message.paymentRef().value()).isEqualTo("pay_Y");
-        assertThat(message.amount()).isNull();
+        assertThat(message.factRef().value()).isEqualTo("rfnd_1");
+        assertThat(message.amount()).isEqualTo(Money.of(100, "INR"));
+    }
+
+    @Test
+    void aRefundWithoutItsIdentityOrAmountIsUnparseable() {
+        String body = """
+                {"event":"refund.processed","created_at":1,"payload":{"refund":{"entity":{"payment_id":"pay_Y"}}}}""";
+
+        assertThatThrownBy(() -> adapter.parse(
+                        Channel.SERVER,
+                        Razorpay.webhook(body, Razorpay.WEBHOOK_SECRET, "evt_r"),
+                        Razorpay.connection(),
+                        Instant.now()))
+                .isInstanceOf(UnparseableMessageException.class);
+    }
+
+    @Test
+    void documentsLateAuthorization() {
+        assertThat(adapter.lateSuccessAfterFailure()).isTrue();
+        assertThat(adapter.policy().freshness()).isEqualTo(java.time.Duration.ofHours(25));
     }
 
     @Test

@@ -251,7 +251,7 @@ public class GatewayService implements GatewayUseCase {
                     : validations.lock(provider, answer.providerRef()).orElse(null);
             Payment payment =
                     payments.lockOrCreate(provider, answer.paymentRef(), validation == null ? null : validation.id());
-            Gate.Result result = Gate.receive(answer, validation, payment, answeredAt, adapter.freshness());
+            Gate.Result result = Gate.receive(answer, validation, payment, answeredAt, adapter.policy());
             if (result.validation() != null && !result.validation().equals(validation)) {
                 validations.update(result.validation());
             }

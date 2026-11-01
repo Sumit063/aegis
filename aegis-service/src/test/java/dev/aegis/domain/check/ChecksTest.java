@@ -32,7 +32,7 @@ class ChecksTest {
     }
 
     private static Check.Context context(PaymentMessage message, Validation validation, Payment payment) {
-        return new Check.Context(message, validation, payment, List.of(), T0, Duration.ofHours(25), Check.Limits.NONE);
+        return new Check.Context(message, validation, payment, List.of(), T0, Fixtures.RAZORPAY, Check.Limits.NONE);
     }
 
     private static Payment paymentWithStatus(Outcome status) {
@@ -99,38 +99,57 @@ class ChecksTest {
                 .contains(BlockReason.AMOUNT_MISMATCH);
     }
 
-    @ParameterizedTest(name = "{0} on a payment that is {1} (validation paid: {2}) → downgrade: {3}")
-    @CsvSource({
-        "FAILED,   ,        true,  true",
-        "FAILED,   ,        false, false",
-        "PENDING,  SUCCESS, true,  true",
-        "SUCCESS,  FAILED,  false, false",
-        "REFUNDED, SUCCESS, true,  false",
-        "SUCCESS,  PENDING, false, false"
-    })
-    void nothingMovesAPaymentBackwards(Outcome outcome, Outcome current, boolean paid, boolean downgrade) {
-        Validation validation = paid ? CREATED.markPaid() : CREATED;
-        Payment payment = current == null ? null : paymentWithStatus(current);
-
-        assertThat(Checks.NO_DOWNGRADE.apply(context(webhook(outcome, null), validation, payment)))
-                .isEqualTo(downgrade ? Optional.of(BlockReason.DOWNGRADE) : Optional.empty());
+    /** Once a validation is paid, only the payment that paid it moves on. */
+    @ParameterizedTest(name = "{0} on another attempt of a paid validation → {1}")
+    @CsvSource({"SUCCESS, DUPLICATE_PAYMENT", "FAILED, DOWNGRADE", "PENDING, DOWNGRADE"})
+    void anotherAttemptCannotChangeAPaidValidation(Outcome outcome, BlockReason reason) {
+        assertThat(Checks.NOT_PAID_ELSEWHERE.apply(context(webhook(outcome, null), CREATED.markPaid(), null)))
+                .contains(reason);
+        assertThat(Checks.NOT_PAID_ELSEWHERE.apply(context(webhook(outcome, null), CREATED, null)))
+                .isEmpty();
     }
 
     @Test
-    void theSameFactIsForwardedOnce() {
+    void theSameFactIsForwardedOnceButAnAnswerMayConfirmIt() {
         Payment paid = paymentWithStatus(Outcome.SUCCESS);
         PaymentMessage reply = message(
                 "razorpay", MessageType.STATUS_CHECK, "aegis:1", "order_TEST", "pay_TEST", Outcome.SUCCESS, null, T0);
 
-        assertThat(Checks.NEW_FACT.apply(context(webhook(Outcome.SUCCESS, null), CREATED, paid)))
+        assertThat(Checks.TRANSITION.apply(context(webhook(Outcome.SUCCESS, null), CREATED, paid)))
                 .contains(BlockReason.DUPLICATE);
-        assertThat(Checks.NEW_FACT.apply(context(webhook(Outcome.REFUNDED, null), CREATED, paid)))
+        assertThat(Checks.TRANSITION.apply(context(reply, CREATED, paid)))
+                .as("a status-check reply confirming the state is an answer, not a duplicate")
                 .isEmpty();
-        assertThat(Checks.NEW_FACT.apply(context(reply, CREATED, paid)))
-                .as("replies return to the caller")
+        assertThat(Checks.TRANSITION.apply(context(webhook(Outcome.SUCCESS, null), CREATED, null)))
                 .isEmpty();
-        assertThat(Checks.NEW_FACT.apply(context(webhook(Outcome.SUCCESS, null), CREATED, null)))
+    }
+
+    @Test
+    void refundsAreNotComparedWithTheOrderAmountButWithWhatWasPaid() {
+        PaymentMessage refund = message(
+                "razorpay",
+                MessageType.WEBHOOK,
+                "evt_r",
+                "order_TEST",
+                "pay_TEST",
+                Outcome.REFUNDED,
+                Money.of(100, "INR"),
+                T0);
+        PaymentMessage foreign = message(
+                "razorpay",
+                MessageType.WEBHOOK,
+                "evt_r",
+                "order_TEST",
+                "pay_TEST",
+                Outcome.REFUNDED,
+                Money.of(100, "USD"),
+                T0);
+
+        assertThat(Checks.AMOUNT_MATCHES.apply(context(refund, CREATED, null))).isEmpty();
+        assertThat(Checks.REFUND_WITHIN_PAYMENT.apply(context(refund, CREATED, null)))
                 .isEmpty();
+        assertThat(Checks.REFUND_WITHIN_PAYMENT.apply(context(foreign, CREATED, null)))
+                .contains(BlockReason.AMOUNT_MISMATCH);
     }
 
     @Test

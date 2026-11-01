@@ -18,6 +18,9 @@ public interface PaymentRepository {
 
     Optional<Payment> find(long id);
 
+    /** The validation a known payment belongs to, read without locking (to lock it first). */
+    Optional<Long> validationIdOf(Ref provider, Ref paymentRef);
+
     /** Locks the row for this payment reference if it exists. */
     Optional<Payment> lock(Ref provider, Ref paymentRef);
 
