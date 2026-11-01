@@ -176,6 +176,17 @@ by the persistence adapter with Jackson into explicit stored records.
 - `payments` has no amount columns: the authority's amount is the validation's.
 - Evidence keys are generated on the host (`AEGIS_EVIDENCE_KEY` in `.env`) and never leave it.
 
+### D23 — Payment requests are recorded before they are sent
+Under the validation's lock, a permitted payment request is written as an in-flight entry, the
+transaction commits, and only then is the request sent; the reply is attached afterwards.
+- **Why:** with no network call inside a transaction (invariant 6), checking and sending cannot be
+  atomic; writing first means a concurrent request already sees one in flight, so two can never go
+  out (T10). If the provider is unreachable, the request stays in flight until a status check or a
+  result settles it, consistent with D2 (Aegis never decides on its own).
+- **Applications authenticate** with a per-application API key (bearer) and, where configured, a
+  client-certificate subject checked behind the TLS-terminating proxy; a connection is usable only
+  by the application it belongs to.
+
 ## Design review log
 
 | # | Issue | Fix |
