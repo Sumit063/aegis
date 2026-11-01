@@ -6,6 +6,7 @@ import dev.aegis.application.port.out.DirectoryPort;
 import dev.aegis.application.port.out.Evidence;
 import dev.aegis.application.port.out.EvidenceCipherPort;
 import dev.aegis.application.port.out.IngressRecord;
+import dev.aegis.application.port.out.MetricsPort;
 import dev.aegis.application.port.out.PaymentRepository;
 import dev.aegis.application.port.out.ValidationRepository;
 import dev.aegis.domain.check.Gate;
@@ -45,6 +46,7 @@ public class CheckService implements CheckMessageUseCase {
     private final ValidationRepository validations;
     private final PaymentRepository payments;
     private final EvidenceCipherPort cipher;
+    private final MetricsPort metrics;
     private final Clock clock;
 
     public CheckService(
@@ -53,12 +55,14 @@ public class CheckService implements CheckMessageUseCase {
             ValidationRepository validations,
             PaymentRepository payments,
             EvidenceCipherPort cipher,
+            MetricsPort metrics,
             Clock clock) {
         this.directory = directory;
         this.providers = providers;
         this.validations = validations;
         this.payments = payments;
         this.cipher = cipher;
+        this.metrics = metrics;
         this.clock = clock;
     }
 
@@ -96,6 +100,7 @@ public class CheckService implements CheckMessageUseCase {
             validations.update(result.validation());
         }
         Payment stored = payments.save(result.payment(), result.repeat() ? Map.of() : Map.of(parsed.id(), evidence));
+        metrics.verdict(connection.name(), parsed.type(), result.verdict(), result.repeat());
         log.info(
                 "{} {} {} payment={} {}",
                 connection.name(),
@@ -114,6 +119,7 @@ public class CheckService implements CheckMessageUseCase {
         MessageType type = record.channel() == Channel.BROWSER ? MessageType.CALLBACK : MessageType.WEBHOOK;
         Payment stored = payments.insertUntrusted(
                 Payment.untrusted(Ref.of(connection.name()), type, reason, record.receivedAt(), record.id()), evidence);
+        metrics.verdict(connection.name(), type, Verdict.blocked(reason), false);
         log.warn("{} {} BLOCKED {} payment={}", connection.name(), type, reason, stored.id());
         return new Result(Verdict.blocked(reason), stored.id(), null, false);
     }

@@ -1,5 +1,9 @@
 # Pre-production (branch `staging`). Same settings as production, gateway test keys only.
 logging:
+  # One JSON object per line (ECS), so logs are searchable by reference.
+  structured:
+    format:
+      console: ecs
   level:
     dev.aegis: INFO
 
