@@ -30,7 +30,7 @@ public class Shop {
     }
 
     ShopOrder add(long amount, String gatewayOrderId, String id) {
-        ShopOrder order = new ShopOrder(id, amount, gatewayOrderId, ShopOrder.Status.CREATED, 0);
+        ShopOrder order = new ShopOrder(id, amount, gatewayOrderId, ShopOrder.Status.CREATED, 0, null);
         orders.put(id, order);
         return order;
     }

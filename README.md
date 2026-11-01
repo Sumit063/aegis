@@ -57,6 +57,9 @@ provider.
 
 - [Code architecture](docs/engineering/ARCHITECTURE.md) — hexagonal layout, dependency rules, patterns, provider adapters
 - [CI/CD, environments and branching](docs/engineering/CICD.md)
+- [Runbook](docs/engineering/RUNBOOK.md) — guarantees, recovery, backup/restore, replay, secret rotation
+- [Benchmark](docs/engineering/BENCHMARK.md) — the whole pipeline, measured and reproducible
+- [Hardening audit](docs/design/HARDENING.md) — every review requirement, its status and what is still open
 - [Features](docs/features/README.md) — backlog and the feature-by-feature workflow
 - [AGENTS.md](AGENTS.md) — rules and workflow for AI coding agents and contributors
 
@@ -71,6 +74,7 @@ docker compose -f deploy/compose.yaml -f deploy/compose.local.yaml up -d postgre
 ./mvnw -pl aegis-service spring-boot:run                  # run the service (profile: local)
 scripts/check.sh [staging]                                # validate local, or what the server runs
 lab/run.sh                                                # Exploit Lab: every attack, results in lab/RESULTS.md
+java lab/bench/Bench.java 2000 32                         # pipeline benchmark (lab running: KEEP=1 lab/run.sh)
 ```
 
 ## Milestones

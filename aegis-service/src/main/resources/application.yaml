@@ -66,7 +66,7 @@ management:
       group:
         # Ready means the database answers, not just that the process started.
         readiness:
-          include: readinessState,db
+          include: readinessState,db,kafka
   info:
     env:
       enabled: true

@@ -85,20 +85,19 @@ public class ForwardService implements ForwardUseCase {
         if (claimed == null || claimed.isEmpty()) {
             return 0;
         }
-        int delivered = 0;
         try (ExecutorService threads = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Future<Integer>> results = claimed.stream()
                     .map(payment -> threads.submit(() -> deliver(payment)))
                     .toList();
             for (Future<Integer> result : results) {
-                delivered += result.get();
+                result.get();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (ExecutionException e) {
             log.error("forwarding pass failed", e.getCause());
         }
-        return delivered;
+        return claimed.size();
     }
 
     private int deliver(Claimed payment) {

@@ -106,10 +106,10 @@ Batches: **H1** payment facts · **H2** database-enforced identities · **H3** a
 | Requirement | As built | Gap | Batch |
 |---|---|---|---|
 | Structured, redacted logs | ECS JSON; `ObservabilityIT` | none | — |
-| Correlation IDs through HTTP and Kafka | ingress record ID only | MDC + header propagation | H5 |
+| Correlation IDs through HTTP and Kafka | ingress record ID only | done: `X-Request-Id` → MDC → Kafka record → Checker logs; `X-Aegis-Message-Id` on deliveries | H5 ✓ |
 | Metrics and alerts | verdicts, ack latency, forwards, lag | done: `aegis_dead_letters_total`, `aegis_ingress_limited_total`, alerts | H3 ✓ |
-| Readiness reflects dependencies | database only | add Kafka | H5 |
-| Backup, restore, replay runbook | not written | write and rehearse | H5 |
+| Readiness reflects dependencies | database only | done: readiness = database + Kafka (`FailureIT`) | H5 ✓ |
+| Backup, restore, replay runbook | not written | done: [RUNBOOK](../engineering/RUNBOOK.md); restore rehearsal is manual (§12) | H5 ✓ |
 
 ## 10. Failure-injection suite (review items 1–26)
 
@@ -119,5 +119,16 @@ merchant idempotency), 26 (H5).
 
 ## 11. Performance
 
-No throughput number is claimed. H5 adds a reproducible benchmark of the full pipeline with
-p50/p95/p99, throughput and lag, including duplicate and invalid traffic.
+Done (H5): [BENCHMARK](../engineering/BENCHMARK.md), reproducible with `java lab/bench/Bench.java`.
+It found and fixed a Forwarder pacing limit (end-to-end p99 in a burst 19.3 s → 3.5 s).
+
+## 12. Still open (manual or later)
+
+| Item | Why open | Plan |
+|---|---|---|
+| Restore rehearsal from a real backup (item 26) | needs a scheduled `pg_dump` on the host first | add the nightly job to the host and rehearse once; RUNBOOK §5 has the commands |
+| Merchant acknowledgement lost after processing (item 19) | outside Aegis: needs the merchant to dedupe by `id` | documented contract (LLD §8, RUNBOOK §2); the lab shop's handling could be made idempotent by `id` as an example |
+| Forwarder crash mid-delivery (item 20) | covered by design (lease expiry re-sends; stable `id`), not by an automated kill test | add a test that kills the claiming transaction holder |
+| Multi-instance limits | per-instance by design (D26) | a shared limiter only if real traffic needs it |
+| mTLS to merchants | configured at the TLS proxy, not in Aegis | document a reference proxy config with the first production host |
+| Real Razorpay test-mode run | needs a public URL (tunnel) and the dashboard webhook | run when staging gets a public ingress |

@@ -1,0 +1,96 @@
+# Runbook
+
+Operating Aegis in an environment (`staging` today, `prod` later). Every command runs on the host as
+the deploy user, in `~/aegis/<env>`; `c` is `docker compose --project-name aegis-<env>`.
+
+```bash
+cd ~/aegis/staging && c() { docker compose --project-name aegis-staging "$@"; }
+ADMIN="Authorization: Bearer $(grep ^AEGIS_ADMIN_API_KEY= .env | cut -d= -f2)"   # runner user, or sudo
+```
+
+## 1. Is it healthy?
+
+| Check | Command |
+|---|---|
+| Everything at once | `scripts/check.sh staging` (from a laptop) |
+| Readiness (database + Kafka) | `curl -s 127.0.0.1:8181/actuator/health/readiness` |
+| What was blocked recently | `curl -s -H "$ADMIN" 127.0.0.1:8180/admin/blocked` |
+| Oldest undelivered message | `curl -s 127.0.0.1:8181/actuator/prometheus \| grep aegis_forward_lag` |
+
+## 2. Guarantees and their limits
+
+- **Acknowledged = stored in Kafka.** A provider gets 2xx only after the broker confirmed the write
+  (`acks=all`, idempotent producer). A timeout is answered 503; the provider retries; a second copy
+  is recognised by its message ID.
+- **At-least-once to the application, with stable identity.** Every passed message is delivered
+  until acknowledged (72 h), with the same `id` every time. Aegis cannot make the application's own
+  side effect happen exactly once: the application must ignore an `id` it has processed.
+- **Facts at most once.** A message ID and a forwardable fact exist once (database keys, D25).
+- **Not guaranteed:** surviving the loss of the single Kafka broker's disk or the database disk
+  without backups (single host). See §5.
+
+## 3. Common situations
+
+| Situation | What happens | What to do |
+|---|---|---|
+| Kafka down | Ingress answers 503; providers retry (Razorpay: 24 h) | restart Kafka: `c up -d kafka` |
+| PostgreSQL down | Checker pauses (messages wait in Kafka); Gateway API 503 | restart: `c up -d postgres`; the Checker resumes by itself |
+| Application down | deliveries retry with backoff; lag alert after 5 min | nothing; or pause it (§4) to stop retries |
+| `ForwardFailed` alert | a message gave up after 72 h | fix the application, then re-forward (§4) |
+| `DeadLetters` alert | a record could not be processed | §4 replay after the fix |
+| `PaidTwice` alert | a customer paid twice for one order | refund the second payment at the provider |
+| `ForgedMessages` alert | forged messages on a connection | nothing is accepted; check the source, rotate the webhook secret if a leak is suspected (§6) |
+
+## 4. Operations
+
+```bash
+# Pause / resume deliveries to an application (messages queue, nothing is lost)
+curl -s -H "$ADMIN" -X PUT -H 'Content-Type: application/json' -d '{"pausedApplications":["shop"]}' 127.0.0.1:8180/admin/settings
+curl -s -H "$ADMIN" -X PUT -H 'Content-Type: application/json' -d '{"pausedApplications":[]}' 127.0.0.1:8180/admin/settings
+
+# Find a payment by any reference, then re-forward one of its messages
+curl -s -H "$ADMIN" "127.0.0.1:8180/admin/payments?ref=pay_XXXX"
+curl -s -H "$ADMIN" -X POST 127.0.0.1:8180/admin/payments/<id>/messages/<n>/forward
+
+# Dead letters: look, then replay into the ingress topic once the cause is fixed
+c exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:29092 \
+  --topic aegis.inbound.dlt --from-beginning --property print.key=true --timeout-ms 5000
+c exec kafka bash -c '/opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:29092 \
+  --topic aegis.inbound.dlt --from-beginning --property print.key=true --property key.separator="|" --timeout-ms 5000 \
+  | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server kafka:29092 --topic aegis.inbound \
+    --property parse.key=true --property key.separator="|"'
+```
+
+Replaying is safe: a record already processed is recognised as a repeat.
+
+## 5. Backup, restore, disaster recovery
+
+| What | How | Loss if the host dies |
+|---|---|---|
+| PostgreSQL (all records) | nightly `pg_dump` (below), copied off the host | since the last dump |
+| Kafka (messages not yet checked) | not backed up; normally drained within seconds | messages acknowledged but not yet checked; the provider will not resend them |
+| `.env`, `aegis.yaml` (secrets, configuration) | copy to a password manager / secret store when changed | **everything sealed with the evidence key becomes unreadable without it** |
+
+```bash
+# Backup (run nightly; keep 14)
+c exec -T postgres pg_dump -U aegis -Fc aegis > ~/backups/aegis-staging-$(date +%F).dump
+
+# Restore into a fresh environment: deploy it (same .env and aegis.yaml), stop Aegis, restore, start
+c stop aegis
+c exec -T postgres pg_restore -U aegis -d aegis --clean --if-exists < ~/backups/aegis-staging-<date>.dump
+c start aegis && scripts/check.sh staging
+```
+
+After a restore, messages the providers sent between the dump and the failure are recovered by
+**application-initiated status checks** through Aegis (`POST /gw/<connection>/status`), never by
+Aegis polling on its own (D2).
+
+## 6. Secret rotation
+
+| Secret | Steps |
+|---|---|
+| Provider webhook secret | add the new one first in `aegis.yaml` (`webhook: [new, old]`), deploy, change it at the provider, then remove the old one |
+| Provider API key | create the new key at the provider, replace `key-secret`/`key-id`, deploy, revoke the old key |
+| Application signing secret / API key | coordinate with the application (it verifies Aegis's signature) |
+| Evidence key | add `k2` to `aegis.evidence.keys`, make it `current`, deploy; keep `k1` until its data passes retention (180 days) |
+| Admin key | replace `AEGIS_ADMIN_API_KEY` in `.env`, deploy |
