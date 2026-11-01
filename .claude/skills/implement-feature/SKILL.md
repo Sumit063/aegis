@@ -13,7 +13,7 @@ Precondition: `docs/features/<ID>-*.md` exists with status `approved`. If not, s
 1. **Read** the design note, `AGENTS.md` invariants and `docs/engineering/ARCHITECTURE.md`.
    Set the note's status to `in progress`.
 2. **Work inside-out, one slice at a time:**
-   1. `domain` — types, invariants, state machines + unit tests (no mocks).
+   1. `domain` — types, invariants, checks + unit tests (no mocks).
    2. `application` — ports and use-case services + unit tests with in-memory fakes of ports.
    3. adapters — persistence, Kafka, web, providers + integration tests (Testcontainers, WireMock).
    4. configuration wiring and validation.
@@ -24,7 +24,7 @@ Precondition: `docs/features/<ID>-*.md` exists with status `approved`. If not, s
    ```
    Fix failures before moving on (see `verify-build`). Never continue on a red build.
 4. **Commit each green slice** with a Conventional Commit message, e.g.
-   `feat(domain): add payment target state machine`. Never use `--no-verify`.
+   `feat(domain): add downgrade check`. Never use `--no-verify`.
 5. **Scenario tests:** implement the LLD T-ids named in the design note.
 6. **Self-review** with the `code-review` skill; fix findings.
 7. **Docs:** update `LLD.md` / `DECISIONS.md` if anything deviated from the design; set the

@@ -4,9 +4,11 @@ Instructions for AI coding agents (and humans) working in this repository.
 
 ## What this is
 
-Aegis is a self-hosted service that decides what a merchant may believe about money: it verifies
-payment claims (webhooks, checkout proofs, status responses), confirms them with the provider,
-applies them to a state machine and notifies the merchant backend **once per real change**.
+Aegis is a self-hosted, zero-trust security gateway for payment messages. It sits between an
+application and its payment providers, checks every message in both directions (signature,
+freshness, duplicates, match with the validation, no downgrade), records it, and forwards the
+original with its verdict, or blocks it. It holds the provider secrets and never calls a provider
+unless the application asks.
 Java 25 · Spring Boot 4 · Kafka · PostgreSQL · Docker Compose.
 
 ## Read before changing anything
@@ -14,8 +16,8 @@ Java 25 · Spring Boot 4 · Kafka · PostgreSQL · Docker Compose.
 | Need | Document |
 |---|---|
 | Where Aegis sits, payment flows, terms | `docs/design/PAYMENT-FLOWS.md` |
-| Goals, architecture, guarantees, failures | `docs/design/HLD.md` |
-| State machines, APIs, schema, test catalogue (T1–T23) | `docs/design/LLD.md` |
+| Role, checks, zero trust, guarantees, failures | `docs/design/HLD.md` |
+| Endpoints, pipelines, adapter SPI, schema, test catalogue (T1–T19) | `docs/design/LLD.md` |
 | Every decision and why | `docs/design/DECISIONS.md` |
 | Code layout, dependency rules, design patterns | `docs/engineering/ARCHITECTURE.md` |
 | Pipelines and deployment | `docs/engineering/CICD.md` |
@@ -37,16 +39,17 @@ Integration tests need a running Docker daemon.
 
 Code that breaks one of these is wrong even if tests pass.
 
-1. **Claims trigger, the provider decides.** No inbound message sets state directly; state follows
-   the provider's confirmed truth (D4).
-2. **Nothing is acknowledged before it is durably stored** (webhook → Kafka before `200`).
-3. **Never forward or report success for an unconfirmed claim** in strict mode.
-4. **Once is enforced by the database** (`claim_dedupe`, `UNIQUE (type, subject_id)`), not by
-   application checks alone.
-5. **Lock order is target, then transaction.** Never the reverse.
+1. **Every message gets every check, on every code path.** No message type, host, IP or header
+   skips signature verification.
+2. **Nothing is acknowledged before it is durably stored** (provider message → Kafka before the ack).
+3. **Never forward a message that failed a check.** Blocked messages are stored and alerted on.
+4. **One row per validation, one row per payment** (`UNIQUE (provider, payment_ref)`). All checks
+   for a payment run in one transaction holding the validation row lock.
+5. **Aegis never calls a provider on its own** — only for an application request (D2).
 6. **No network calls inside a database transaction.**
-7. **Fail closed:** missing/weak secrets stop startup; uncertainty means hold, not forward.
-8. **Aegis never moves money** and never handles raw card data.
+7. **Fail closed:** missing, empty or weak secrets stop startup; a verification error means block.
+8. **Aegis never moves money**, never handles raw card data, and stores message bodies only
+   encrypted.
 9. **Secrets and personal data never appear in logs, exceptions, tests, commits or profile files.**
    Each environment's keys come only from its own environment variables.
 10. **Amounts are `long` minor units with a currency** — never `double`/`float`.
@@ -57,7 +60,7 @@ Code that breaks one of these is wrong even if tests pass.
 - `application` depends only on `domain` and `provider.spi`.
 - Adapters never depend on each other. Providers never depend on each other.
 - JPA annotations only in `adapter.out.persistence`.
-- New behaviour goes in by **adding** a class (provider module, `ClaimRule`, policy entry), not by
+- New behaviour goes in by **adding** a class (provider adapter, `Check`), not by
   adding `if (provider == …)` branches to the core.
 
 ## Coding conventions
@@ -66,7 +69,7 @@ Code that breaks one of these is wrong even if tests pass.
   `switch` pattern matching, `Optional` only as a return type. No Lombok.
 - Constructor injection only; classes `final` unless designed for extension.
 - Names: `*UseCase` (port in), `*Port` / `*Repository` (port out), `*Adapter`, `*Controller`,
-  `*Worker`, `*Rule`, `*Policy`.
+  `*Check`, `*Policy`.
 - Validate at boundaries (DTOs, value-object constructors); trust types inside.
 - Exceptions: domain-specific, unchecked, never swallowed; no stack traces with secrets.
 - Comments explain *why*, not *what*. Public SPI types get Javadoc.
@@ -77,7 +80,7 @@ Code that breaks one of these is wrong even if tests pass.
 - Every behaviour change ships with tests. Domain logic: unit tests, no mocks.
 - Adapters: integration tests against real PostgreSQL/Kafka (Testcontainers) and WireMock.
 - Map scenario tests to the LLD test catalogue IDs (`T7`, …) in the test name or `@DisplayName`.
-- Test names describe behaviour: `capturedPaymentOnPaidTargetEmitsOverpaid()`.
+- Test names describe behaviour: `failedAfterSuccessIsBlockedAsDowngrade()`.
 - AssertJ for assertions; no `Thread.sleep` (use Awaitility).
 
 ## Workflow for agents

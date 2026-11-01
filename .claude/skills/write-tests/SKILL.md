@@ -9,7 +9,7 @@ description: Write or improve Aegis tests at the right level (unit, architecture
 
 | What you are testing | Level | Tools | Class name |
 |---|---|---|---|
-| Value objects, state machines, rules, policies | Unit | JUnit 5, AssertJ — no mocks | `*Test` |
+| Value objects, checks, outcome mappings, policies | Unit | JUnit 5, AssertJ — no mocks | `*Test` |
 | Use-case services | Unit | In-memory fakes of ports (hand-written, in `src/test`) | `*Test` |
 | A provider module against the SPI | Contract | Extend the shared abstract contract suite | `*ContractTest` |
 | JPA repositories, Kafka, HTTP clients, controllers | Integration | Testcontainers (PostgreSQL, Kafka), WireMock, MockMvc | `*IT` |
@@ -21,10 +21,10 @@ description: Write or improve Aegis tests at the right level (unit, architecture
 
 - One behaviour per test; name it as a sentence: `duplicateWebhookIsRecordedOnce()`.
 - Arrange / act / assert blocks; builders for fixtures (`aCapturedPayment().withAmount(…)`).
-- State machines: test **every** allowed transition and a representative set of forbidden ones
-  (parameterised tests over the transition table).
+- Checks: test each check alone, passing and blocking, and every provider status in the outcome
+  mapping table (parameterised).
 - Concurrency: run competing calls with an executor and assert database-level outcomes
-  (one notification, one transition).
+  (one payment row, one forwarded fact).
 - Time: inject `ClockPort` / `java.time.Clock`; never sleep. Use Awaitility for async assertions.
 - Data: obviously fake values (`pay_TEST0001`, `order_TEST0001`, `test-secret-…`); never real keys
   or personal data.

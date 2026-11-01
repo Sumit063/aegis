@@ -11,32 +11,26 @@ other provider.
 ## Steps
 
 1. **Design note first** (`solution-design`): list the provider's
-   - webhook/callback format and authentication (→ `SignatureScheme` strategy),
-   - checkout proof, if any,
-   - truth source: fetch APIs or status-enquiry API,
-   - status vocabulary → domain state mapping table (every provider status mapped or explicitly
-     ignored),
-   - target model (order, payment intent, QR, bill, recharge request),
-   - rate limits, timeouts, retry semantics, idempotency keys.
-2. **Create** `provider/<name>/` with:
-   - `<Name>ProviderModule` implementing `ProviderModule`,
-   - only the capability interfaces the provider actually supports
-     (`WebhookAuthenticator`, `WebhookParser`, `CheckoutProofVerifier`, `TruthSource`,
-     `StatusEnquiry`),
-   - a mapper (anti-corruption layer): provider DTOs → domain types; no provider types leak out,
-   - a `SignatureScheme` implementation if no existing one fits.
-3. **Register** the module as a Spring bean; the `ProviderRegistry` picks it up. Add config
-   validation for its credentials (fail closed).
+   - validation call (create order, bill fetch, …) and which reply fields fix the amount,
+   - inbound message formats and authentication (HMAC, checksum, XML-DSig, mTLS, encryption),
+   - the synchronous acknowledgement it expects (2xx, `<Ack/>`),
+   - message ID, references and timestamp fields (for duplicates, matching and freshness),
+   - status vocabulary → `Outcome` mapping (every status mapped or explicitly `OTHER`; only the
+     final-success status maps to `SUCCESS`),
+   - outbound calls Aegis proxies, their authentication, and status-check limits.
+2. **Create** `provider/<name>/` with a `<Name>Adapter` implementing `ProviderAdapter`; unused parts
+   keep the SPI defaults. Provider DTOs never leave the package.
+3. **Register** the bean; add a connection to the configuration with fail-closed secret validation.
 4. **Tests:**
    - `<Name>ContractTest` extending the shared SPI contract suite,
    - signature vectors (valid, tampered body, wrong secret, empty secret, rotated secret),
    - status mapping table test (every row),
-   - WireMock integration test for the truth source, including timeouts and 5xx.
-5. **Docs:** add the provider to the capability matrix in ARCHITECTURE §6 and to `LLD.md` §10.
+   - WireMock test for proxied outbound calls, including timeouts and 5xx.
+5. **Docs:** add the provider to the table in `LLD.md` §6.
 6. `./mvnw verify` green; review with `code-review`.
 
 ## Rules
 - Never add `if (provider == X)` to core code. If the core seems to need it, the SPI is missing a
-  capability — extend the SPI in a separate, reviewed change.
+  method — extend the SPI in a separate, reviewed change.
 - Provider modules never import other provider modules.
 - Credentials only via configuration; never hardcoded, never logged.
