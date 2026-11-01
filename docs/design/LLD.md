@@ -23,7 +23,7 @@ Scope: M1 (Razorpay). Later providers are adapters; the engine, APIs and tables 
 | `POST /gw/{connection}/validations` | Application | Validation call, passed through to the provider |
 | `POST /gw/{connection}/payments` | Application | Payment request (server-to-server providers: NPCI/BBPS) |
 | `POST /gw/{connection}/status` | Application | Status check; the only way a status check ever happens |
-| `GET /admin/…` | Operators (private) | Look up by reference, blocked messages, re-forward, settings |
+| `GET/POST/PUT /admin/…` | Operators (private, admin key) | `payments/{id}`, `payments?ref=`, `validations?ref=`, `blocked`, `payments/{id}/messages/{n}/forward`, `settings` |
 
 Gateway API bodies are **provider-native**: the application sends what it would have sent to the
 provider. Aegis adds authentication, signing and encryption, and returns the provider's reply plus
@@ -316,8 +316,9 @@ aegis:
 - Startup fails on a missing or empty secret, a provider secret shorter than 16 characters, an
   application secret shorter than 32, or a connection naming an unknown application. Empty
   "previous" slots are dropped. Signing uses the first secret of a list; verification accepts any.
-- Runtime-tunable values (forwarding backoff, pause per application, log levels) live in `config`.
-  Each instance keeps an in-memory snapshot, refreshed by `LISTEN/NOTIFY` plus a 30 s poll.
+- Runtime settings (today: pause forwarding per application) live in `config`, versioned with who
+  changed them. Each instance keeps an immutable snapshot, reloaded at start and every 5 s.
+- The Admin API needs `aegis.admin.api-key` (≥ 32 characters, generated per environment).
 - Profiles (`local`, `dev`, `staging`, `prod`): see DECISIONS D9.
 
 ## 12. Observability
