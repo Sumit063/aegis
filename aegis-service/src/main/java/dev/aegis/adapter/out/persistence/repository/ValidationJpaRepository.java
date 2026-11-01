@@ -17,6 +17,10 @@ public interface ValidationJpaRepository extends JpaRepository<ValidationEntity,
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<ValidationEntity> findByProviderAndProviderRef(String provider, String providerRef);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select v from ValidationEntity v where v.id = :id")
+    Optional<ValidationEntity> lockById(@Param("id") Long id);
+
     List<ValidationEntity> findTop100ByMerchantRefOrProviderRefOrderByIdDesc(String merchantRef, String providerRef);
 
     /** Old validations no payment refers to any more (payments are purged first). */

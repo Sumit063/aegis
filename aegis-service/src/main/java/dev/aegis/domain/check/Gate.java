@@ -2,9 +2,10 @@ package dev.aegis.domain.check;
 
 import static dev.aegis.domain.check.Checks.AMOUNT_MATCHES;
 import static dev.aegis.domain.check.Checks.FRESH;
-import static dev.aegis.domain.check.Checks.NEW_FACT;
-import static dev.aegis.domain.check.Checks.NO_DOWNGRADE;
+import static dev.aegis.domain.check.Checks.NOT_PAID_ELSEWHERE;
 import static dev.aegis.domain.check.Checks.PAYABLE;
+import static dev.aegis.domain.check.Checks.REFUND_WITHIN_PAYMENT;
+import static dev.aegis.domain.check.Checks.TRANSITION;
 import static dev.aegis.domain.check.Checks.VALIDATED;
 import static dev.aegis.domain.check.Checks.WITHIN_LIMITS;
 
@@ -24,8 +25,11 @@ import java.util.Optional;
  */
 public final class Gate {
 
-    private static final List<Check> RECEIVE = List.of(FRESH, VALIDATED, AMOUNT_MATCHES, NO_DOWNGRADE, NEW_FACT);
-    private static final List<Check> RECEIVE_UNINTERPRETED = List.of(FRESH);
+    private static final List<Check> RECEIVE =
+            List.of(FRESH, VALIDATED, AMOUNT_MATCHES, REFUND_WITHIN_PAYMENT, NOT_PAID_ELSEWHERE, TRANSITION);
+    // An event Aegis does not interpret is authenticated and fresh at best; it is never payment news.
+    private static final List<Check> RECEIVE_UNINTERPRETED = List.of(FRESH, TRANSITION);
+    private static final Policy NO_POLICY = new Policy(Duration.ZERO, false);
     private static final List<Check> PAY_REQUEST = List.of(VALIDATED, AMOUNT_MATCHES, PAYABLE);
     private static final List<Check> STATUS_CHECK = List.of(WITHIN_LIMITS);
 
@@ -41,7 +45,7 @@ public final class Gate {
      * @param payment the payment with its payment reference, or null if this is the first message
      */
     public static Result receive(
-            PaymentMessage message, Validation validation, Payment payment, Instant now, Duration freshness) {
+            PaymentMessage message, Validation validation, Payment payment, Instant now, Policy policy) {
         Payment current = payment != null
                 ? payment
                 : Payment.open(validation == null ? null : validation.id(), message.provider(), message.paymentRef());
@@ -52,7 +56,7 @@ public final class Gate {
         }
 
         Check.Context context =
-                new Check.Context(message, validation, current, List.of(), now, freshness, Check.Limits.NONE);
+                new Check.Context(message, validation, current, List.of(), now, policy, Check.Limits.NONE);
         Verdict verdict = Checks.run(message.outcome() == Outcome.OTHER ? RECEIVE_UNINTERPRETED : RECEIVE, context);
         boolean paid = verdict.passed() && message.outcome() == Outcome.SUCCESS && validation != null;
         return new Result(verdict, current.append(message, verdict), paid ? validation.markPaid() : validation, false);
@@ -76,7 +80,6 @@ public final class Gate {
             case STATUS_CHECK -> STATUS_CHECK;
             default -> throw new IllegalArgumentException("not an outbound call: " + request.type());
         };
-        return Checks.run(
-                checks, new Check.Context(request, validation, payment, siblings, now, Duration.ZERO, limits));
+        return Checks.run(checks, new Check.Context(request, validation, payment, siblings, now, NO_POLICY, limits));
     }
 }

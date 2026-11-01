@@ -43,17 +43,24 @@ Ingress (synchronous, before acknowledging)
 
 Bodies over 64 KB → 413. `Cookie` and `Authorization` headers are not kept.
 Checker (Kafka consumer, one database transaction per message)
-  6. parse         adapter.parse() → message_id, provider_ref, payment_ref, outcome, amount, sent_at
-  7. lock          SELECT validation WHERE provider_ref = ? FOR UPDATE
-                   then INSERT payment row (provider, payment_ref) ON CONFLICT DO NOTHING; load it
+  6. parse         adapter.parse() → message_id, provider_ref, payment_ref, outcome, amount,
+                   sent_at, fact_ref (e.g. a refund's ID)
+  7. lock          SELECT validation FOR UPDATE: by provider_ref, or (a refund names only its
+                   payment) through the payment already linked to a validation
+                   then INSERT payment row (provider, payment_ref) ON CONFLICT DO NOTHING; lock it
   8. repeat        message_id already in payment.messages → that entry's duplicates + 1, stop
-  9. freshness     sent_at within connection.freshness (Razorpay: 25 h)  → REPLAY
- 10. validated     a validation exists and was accepted                    → NO_VALIDATION
-     amount        message amount/currency (when present) = validation   → AMOUNT_MISMATCH
- 11. downgrade     FAILED while validation.status = PAID, or an outcome ranked below
-                   payment.status (PENDING < SUCCESS = FAILED < REFUNDED)  → DOWNGRADE
-                   SUCCESS after FAILED passes: providers authorize late (Razorpay: up to 3 days)
- 12. same fact     outcome equals payment.status already passed           → DUPLICATE
+  9. freshness     sent_at within the provider's window (Razorpay: 25 h)    → REPLAY
+     supported     outcome OTHER (an event Aegis does not interpret)        → UNSUPPORTED
+ 10. validated     a validation exists and was accepted                      → NO_VALIDATION
+     amount        message amount/currency (when present) = validation;
+                   refunds: their own amount, all refunds ≤ what was paid     → AMOUNT_MISMATCH
+ 11. paid elsewhere validation PAID by another payment: SUCCESS              → DUPLICATE_PAYMENT
+                   (the customer paid twice; alerted, refund it), PENDING/FAILED → DOWNGRADE
+ 12. transition    explicit table (domain.check.Transitions), e.g. FAILED after SUCCESS →
+                   DOWNGRADE, refund before capture → INVALID_TRANSITION, SUCCESS after FAILED only
+                   if the provider documents late success (Razorpay does), the same fact again
+                   (same outcome and fact_ref) → DUPLICATE; a status-check reply confirming the
+                   current state is an answer, not a duplicate
  13. store         append the message to payment.messages with its verdict; if PASSED: set
                    payment.status, set validation.status = PAID on SUCCESS, mark for forwarding
  14. commit DB, then commit the Kafka offset
@@ -62,8 +69,8 @@ Checker (Kafka consumer, one database transaction per message)
 These rules are implemented once, in `domain.check.Gate` (F04). A repeat is detected before
 freshness, so a re-delivered old message is counted instead of stored twice.
 
-`OTHER` outcomes (events the adapter does not map, e.g. settlements) only go through steps 1–9, then
-pass. Unknown connection → 404. An adapter that cannot parse a signed message → stored
+`OTHER` outcomes (events the adapter does not map, e.g. settlements) only go through steps 1–9 and are
+stored as `BLOCKED UNSUPPORTED` (acknowledged to the provider, never forwarded). Unknown connection → 404. An adapter that cannot parse a signed message → stored
 `BLOCKED UNPARSEABLE` with an alert.
 
 **Browser callback** (`/in/{connection}/callback`) runs steps 1–13 inline (no Kafka). The customer is
@@ -104,9 +111,11 @@ on its own that a request has expired.
 | `REPLAY` | inbound 7 |
 | `NO_VALIDATION` | inbound 9, outbound 3 |
 | `AMOUNT_MISMATCH` | inbound 10, outbound 3 |
-| `DOWNGRADE` | inbound 11 |
+| `DOWNGRADE` | inbound 11, 12 |
 | `DUPLICATE` | inbound 12 |
-| `DUPLICATE_PAYMENT` | outbound 3 |
+| `DUPLICATE_PAYMENT` | inbound 11 (paid twice), outbound 3 (one in flight) |
+| `INVALID_TRANSITION` | inbound 12 |
+| `UNSUPPORTED` | inbound 9 |
 | `RATE_LIMIT` | outbound 3 |
 | `UNPARSEABLE` | inbound 6 |
 

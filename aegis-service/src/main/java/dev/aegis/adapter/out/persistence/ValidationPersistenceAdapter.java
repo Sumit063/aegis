@@ -67,6 +67,11 @@ class ValidationPersistenceAdapter implements ValidationRepository {
     }
 
     @Override
+    public Optional<Validation> lock(long id) {
+        return rows.lockById(id).map(ValidationPersistenceAdapter::toDomain);
+    }
+
+    @Override
     public Optional<Validation> find(long id) {
         return rows.findById(id).map(ValidationPersistenceAdapter::toDomain);
     }

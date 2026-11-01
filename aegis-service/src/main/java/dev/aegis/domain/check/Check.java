@@ -26,13 +26,13 @@ public interface Check {
             Payment payment,
             List<Payment> siblings,
             Instant now,
-            Duration freshness,
+            Policy policy,
             Limits limits) {
 
         public Context {
             Objects.requireNonNull(message, "message");
             Objects.requireNonNull(now, "now");
-            Objects.requireNonNull(freshness, "freshness");
+            Objects.requireNonNull(policy, "policy");
             Objects.requireNonNull(limits, "limits");
             siblings = List.copyOf(siblings);
         }
