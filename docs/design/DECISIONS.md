@@ -256,6 +256,8 @@ Post-hardening review (HARDENING §13), each finding verified against the code f
   order signature binds it to the validated order).
 - **Clock skew.** A timestamp more than the provider's skew ahead (SPI `maxClockSkew()`, default
   5 min) is `FUTURE_TIMESTAMP`; the replay window is unchanged and both bounds are inclusive.
+  Webhooks and async responses must carry a send time (`MISSING_TIMESTAMP`, enforced in the domain
+  as well as the adapter, H7); callbacks and status replies have none and are not judged on it.
 - **Refunds are facts, not a state.** A payment's status is its lifecycle (PENDING, SUCCESS, FAILED,
   REVERSED). Each identified refund is a fact on the captured payment; their sum ≤ paid; full means
   equal. A status reply is an observation: "captured" confirms, "refunded" states the cumulative
