@@ -224,6 +224,21 @@ class RazorpayAdapterTest {
         assertThat(message.factRef()).isNull();
     }
 
+    /**
+     * A status reply answers Aegis's own call and is judged when it arrives. The payment's created_at
+     * is when the payment was made, not when this answer was sent: a check days later stays valid.
+     */
+    @Test
+    void aStatusReplyIsNotDatedByThePayment() {
+        PaymentMessage message = statusReply("""
+                {"id":"pay_Y","order_id":"order_X","status":"captured","amount":49900,"currency":"INR",\
+                "created_at":1}""");
+
+        assertThat(message.type()).isEqualTo(MessageType.STATUS_CHECK);
+        assertThat(message.type().timestamped()).isFalse();
+        assertThat(message.sentAt()).isNull();
+    }
+
     @ParameterizedTest(name = "status reply {0} → unparseable")
     @CsvSource(
             delimiter = '|',

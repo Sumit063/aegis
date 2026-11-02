@@ -82,12 +82,20 @@ class ChecksTest {
                 "razorpay", MessageType.WEBHOOK, "evt_TEST", "order_TEST", "pay_TEST", Outcome.SUCCESS, null, at);
     }
 
-    @Test
-    void messagesWithoutASendTimeAreNotJudgedOnFreshness() {
+    /** Notifications must state their send time; callbacks and replies have none and skip freshness. */
+    @ParameterizedTest(name = "{0} without a send time → {1}")
+    @CsvSource({
+        "WEBHOOK,        MISSING_TIMESTAMP",
+        "ASYNC_RESPONSE, MISSING_TIMESTAMP",
+        "CALLBACK,       OK",
+        "STATUS_CHECK,   OK",
+        "PAY_REQUEST,    OK"
+    })
+    void onlyNotificationsMustCarryASendTime(MessageType type, String expected) {
         PaymentMessage noTime = new PaymentMessage(
                 Ref.of("razorpay"),
-                MessageType.CALLBACK,
-                Ref.of("cb:pay_TEST"),
+                type,
+                Ref.of("m:TEST"),
                 Ref.of("order_TEST"),
                 Ref.of("pay_TEST"),
                 Outcome.SUCCESS,
@@ -95,7 +103,8 @@ class ChecksTest {
                 null,
                 T0);
 
-        assertThat(Checks.FRESH.apply(context(noTime, CREATED, null))).isEmpty();
+        assertThat(Checks.FRESH.apply(context(noTime, CREATED, null)))
+                .isEqualTo(expected.equals("OK") ? Optional.empty() : Optional.of(BlockReason.valueOf(expected)));
     }
 
     @Test

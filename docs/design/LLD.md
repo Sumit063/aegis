@@ -53,7 +53,9 @@ Checker (Kafka consumer, one database transaction per message)
   8. repeat        message_id already in payment.messages → that entry's duplicates + 1, stop
   9. freshness     sent_at within the provider's window (Razorpay: 25 h)    → REPLAY
                    sent_at beyond the provider's clock skew ahead (default 5 min) → FUTURE_TIMESTAMP
-                   (adapters require sent_at wherever the provider's protocol carries it)
+                   no sent_at on a webhook or async response                → MISSING_TIMESTAMP
+                   (callbacks and status replies carry none: a callback is bound to its order by
+                   its signature and deduplicated by payment; a reply answers Aegis's own call)
      supported     outcome OTHER (an event Aegis does not interpret)        → UNSUPPORTED
  10. validated     a validation exists and was accepted                      → NO_VALIDATION
      amount        message amount/currency = validation (adapters require them wherever the
@@ -118,6 +120,7 @@ on its own that a request has expired.
 | `BAD_SIGNATURE` | inbound 3, outbound 6 |
 | `REPLAY` | inbound 9 |
 | `FUTURE_TIMESTAMP` | inbound 9 |
+| `MISSING_TIMESTAMP` | inbound 9 |
 | `NO_VALIDATION` | inbound 9, outbound 3 |
 | `AMOUNT_MISMATCH` | inbound 10, outbound 3 |
 | `DOWNGRADE` | inbound 11, 12 |
