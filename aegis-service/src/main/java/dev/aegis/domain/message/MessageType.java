@@ -17,4 +17,13 @@ public enum MessageType {
     public boolean forwarded() {
         return this == CALLBACK || this == WEBHOOK || this == ASYNC_RESPONSE;
     }
+
+    /**
+     * Notifications the provider sends server to server must state when they were sent, so their
+     * freshness is always judged. A callback is tied to its order by its signature and deduplicated by
+     * its payment; a reply answers Aegis's own call and is judged when it arrives.
+     */
+    public boolean timestamped() {
+        return this == WEBHOOK || this == ASYNC_RESPONSE;
+    }
 }
