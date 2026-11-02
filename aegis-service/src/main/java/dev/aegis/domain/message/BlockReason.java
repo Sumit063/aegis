@@ -8,6 +8,8 @@ public enum BlockReason {
     REPLAY,
     /** Dated further in the future than the provider's allowed clock skew. */
     FUTURE_TIMESTAMP,
+    /** A notification whose protocol requires a send time, without one: freshness cannot be judged. */
+    MISSING_TIMESTAMP,
     NO_VALIDATION,
     AMOUNT_MISMATCH,
     /** A stale outcome: it would move a payment backwards (e.g. FAILED after a capture). */

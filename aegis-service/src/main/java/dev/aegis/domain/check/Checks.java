@@ -5,6 +5,7 @@ import static dev.aegis.domain.message.BlockReason.DOWNGRADE;
 import static dev.aegis.domain.message.BlockReason.DUPLICATE;
 import static dev.aegis.domain.message.BlockReason.DUPLICATE_PAYMENT;
 import static dev.aegis.domain.message.BlockReason.FUTURE_TIMESTAMP;
+import static dev.aegis.domain.message.BlockReason.MISSING_TIMESTAMP;
 import static dev.aegis.domain.message.BlockReason.NO_VALIDATION;
 import static dev.aegis.domain.message.BlockReason.RATE_LIMIT;
 import static dev.aegis.domain.message.BlockReason.REPLAY;
@@ -25,13 +26,13 @@ public final class Checks {
 
     /**
      * Sent within the provider's retry window (older: a replay) and not further in the future than its
-     * allowed clock skew. Both bounds are inclusive. A message without a send time skips this; adapters
-     * require the time wherever the provider's protocol carries one (e.g. Razorpay webhooks).
+     * allowed clock skew. Both bounds are inclusive. Server-to-server notifications must carry a send
+     * time ({@link MessageType#timestamped()}); callbacks and replies, which have none, skip this.
      */
     public static final Check FRESH = c -> {
         Instant sentAt = c.message().sentAt();
         if (sentAt == null) {
-            return Optional.empty();
+            return block(c.message().type().timestamped(), MISSING_TIMESTAMP);
         }
         if (sentAt.isAfter(c.now().plus(c.policy().maxClockSkew()))) {
             return Optional.of(FUTURE_TIMESTAMP);

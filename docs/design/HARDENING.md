@@ -147,6 +147,14 @@ anything changed; "verified" states what the code actually did.
 | 5 | Retention consistency | yes: purging by `created_at` could delete a payment refunded last week or with a delivery still due; key retirement ignored backups | purge by `updated_at`, skip rows with `forward_due_at`; one policy table (RUNBOOK §5); key retirement rule (RUNBOOK §6) | H6 ✓ |
 | + | Found while fixing | the `payments.status` constraint did not allow `REVERSED` | V3 constraint adds REVERSED; REFUNDED stays allowed so a rollback to the previous version still writes, and is read as SUCCESS | H6 ✓ |
 
+Re-check (H7): finding 2 was fixed only in the Razorpay adapter. The domain `FRESH` check still
+passed any message without a `sentAt`, so a future adapter omitting the timestamp on a webhook would
+have silently lost replay protection. H7 makes it a domain rule: webhooks and async responses
+without a send time are `MISSING_TIMESTAMP`. Callbacks and status replies carry no send time by
+design and skip freshness; a status reply is never dated by the payment's `created_at` (that is when
+the payment was made, and would turn every check after 25 h into a `REPLAY`). Findings 1 and 3 were
+re-verified against `master` and already covered by tests (H6).
+
 Still open after H6 (in addition to §12):
 - Refund events that arrive **before** the capture they belong to are blocked as `INVALID_TRANSITION`
   and stored; they are not re-evaluated when the capture arrives. A status check through Aegis
