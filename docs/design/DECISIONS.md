@@ -272,6 +272,23 @@ Post-hardening review (HARDENING §13), each finding verified against the code f
   news); making every amount mandatory in the domain (some protocols legitimately carry none; the
   adapter knows which).
 
+### D30 — Stripe: the PaymentIntent is the payment; freshness at arrival
+- **The PaymentIntent is validation and payment.** Its attempts can fail and a later one succeed,
+  so SUCCESS after FAILED is allowed for Stripe; a stale failure after success is still a
+  `DOWNGRADE`. Charges are not payment references: a failed attempt can have none.
+- **What was captured must match**: SUCCESS carries `amount_received`, so a partial capture is an
+  `AMOUNT_MISMATCH`, never a success at the order's price.
+- **`t` is the send time.** Stripe signs a new timestamp for every delivery attempt, so freshness is
+  its 5-minute tolerance; the event's `created` (kept for 3 days of retries) is not used.
+- **Freshness is judged at arrival.** The Checker used its own clock when it got to a message, so a
+  backlog after an outage could turn genuine messages into replays; it now uses Aegis's arrival time
+  (written by Ingress), which a sender cannot influence.
+- **No browser channel** where the provider's redirect is unsigned (Stripe): results arrive by
+  webhook or status check through Aegis.
+- **IDs in provider URLs** are restricted to ID characters (Stripe and Razorpay status checks).
+- **Rejected:** using `charge.refunded` as the refund fact (cumulative, no refund identity, it
+  would double-count with `refund.*`); counting `pending` refunds (not yet money returned).
+
 ## Design review log
 
 | # | Issue | Fix |

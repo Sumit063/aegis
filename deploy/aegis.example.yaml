@@ -15,6 +15,12 @@
 #       secrets:
 #         key-secret: [ "${RZP_KEY_SECRET}" ]
 #         webhook: [ "${RZP_WEBHOOK_SECRET}", "${RZP_WEBHOOK_SECRET_PREVIOUS:}" ]   # current, previous
+#     stripe:                                     # /in/stripe, /gw/stripe/...
+#       adapter: stripe
+#       application: shop
+#       secrets:
+#         secret-key: [ "${STRIPE_SECRET_KEY}" ]  # sk_test_/rk_test_ outside production
+#         webhook: [ "${STRIPE_WEBHOOK_SECRET}", "${STRIPE_WEBHOOK_SECRET_PREVIOUS:}" ]
 #   applications:
 #     shop:
 #       api-key: ${SHOP_AEGIS_API_KEY}            # the shop's key for /gw (32+ characters)

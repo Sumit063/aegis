@@ -28,7 +28,7 @@ The system design (what Aegis does) lives in [`docs/design`](../design); this do
                  └──────────────────────────────────────────────────────────────┘
                  ┌──────────────────────── provider ──────────────────────────┐
                  │  spi (ProviderAdapter, registry, contract) ·                │
-                 │  razorpay · stripe · paytm · bbps · upi · …                 │
+                 │  razorpay · stripe · cashfree · bbps · upi · …              │
                  └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -53,7 +53,7 @@ aegis-service/src/main/java/dev/aegis/
     service/                     *Service: use-case implementations, transaction boundaries
   provider/
     spi/                         ProviderAdapter, RawMessage, ParsedMessage, SecretSet, registry
-    razorpay/                    M1; later stripe/, bbps/, upi/, one package each
+    razorpay/                    M1; stripe/ (M2); later cashfree/, bbps/, upi/, one package each
   adapter/
     in/web/controller/           *Controller: ingress /in, Gateway API /gw, Admin /admin
     in/web/dto/                  request/response records (the HTTP contract)

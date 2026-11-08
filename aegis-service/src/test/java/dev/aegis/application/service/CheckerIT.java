@@ -173,6 +173,25 @@ class CheckerIT extends IntegrationTest {
         assertThat(garbage.verdict()).isEqualTo(Verdict.blocked(BlockReason.UNPARSEABLE));
     }
 
+    /** A message that waited in Kafka (an outage) is judged as of its arrival, not of its check. */
+    @Test
+    void freshnessIsJudgedAtArrivalNotAfterABacklog() {
+        String orderId = unique("order_");
+        Scenario.order(validations, tx, orderId, 49_900);
+        Instant arrived = Instant.now().minus(Duration.ofHours(2));
+        Instant sent = arrived.minus(Duration.ofHours(24));
+
+        Result waited = checker.check(
+                webhook(event("payment.captured", orderId, unique("pay_"), 49_900, sent), unique("evt_"), arrived));
+        Result stale = checker.check(webhook(
+                event("payment.captured", orderId, unique("pay_"), 49_900, sent.minus(Duration.ofHours(2))),
+                unique("evt_"),
+                arrived));
+
+        assertThat(waited.verdict()).isEqualTo(Verdict.PASSED);
+        assertThat(stale.verdict()).isEqualTo(Verdict.blocked(BlockReason.REPLAY));
+    }
+
     /** T14: a record processed again (offset not yet committed) is a repeat, not a second entry. */
     @Test
     void redeliveryIsARepeat() {

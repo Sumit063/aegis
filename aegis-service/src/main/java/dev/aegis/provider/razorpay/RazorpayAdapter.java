@@ -13,7 +13,6 @@ import dev.aegis.provider.spi.PreparedCall;
 import dev.aegis.provider.spi.ProviderAdapter;
 import dev.aegis.provider.spi.RawMessage;
 import dev.aegis.provider.spi.Reply;
-import dev.aegis.provider.spi.Secret;
 import dev.aegis.provider.spi.UnparseableMessageException;
 import java.net.URI;
 import java.net.URLDecoder;
@@ -27,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -57,6 +57,7 @@ public final class RazorpayAdapter implements ProviderAdapter {
     private static final URI API = URI.create("https://api.razorpay.com");
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final long LATEST_SECOND = Instant.MAX.getEpochSecond();
+    private static final Pattern ID = Pattern.compile("[A-Za-z0-9_]{1,128}");
 
     @Override
     public String id() {
@@ -106,7 +107,7 @@ public final class RazorpayAdapter implements ProviderAdapter {
             String presented = message.header(SIGNATURE).orElse(null);
             return presented != null
                     && connection.secrets().all(WEBHOOK).stream()
-                            .anyMatch(secret -> matches(secret, message.body(), presented));
+                            .anyMatch(secret -> secret.signed(message.body(), presented));
         }
         Map<String, String> form = form(message);
         String orderId = form.get("razorpay_order_id");
@@ -116,7 +117,7 @@ public final class RazorpayAdapter implements ProviderAdapter {
             return false;
         }
         byte[] signed = (orderId + "|" + paymentId).getBytes(StandardCharsets.UTF_8);
-        return connection.secrets().all(KEY_SECRET).stream().anyMatch(secret -> matches(secret, signed, presented));
+        return connection.secrets().all(KEY_SECRET).stream().anyMatch(secret -> secret.signed(signed, presented));
     }
 
     @Override
@@ -215,11 +216,12 @@ public final class RazorpayAdapter implements ProviderAdapter {
             }
             return new CallFacts(receipt, null, null, money(body));
         }
-        Ref paymentId = ref(body.path("payment_id").asString(null));
-        if (paymentId == null) {
-            throw new UnparseableMessageException("a status check needs payment_id");
+        // The ID goes into the provider URL: only an ID's characters, never a path.
+        String paymentId = body.path("payment_id").asString("");
+        if (!ID.matcher(paymentId).matches()) {
+            throw new UnparseableMessageException("a status check needs a valid payment_id");
         }
-        return new CallFacts(null, null, paymentId, null);
+        return new CallFacts(null, null, Ref.of(paymentId), null);
     }
 
     @Override
@@ -299,12 +301,6 @@ public final class RazorpayAdapter implements ProviderAdapter {
                 .filter(id -> !id.isBlank())
                 .map(Ref::of)
                 .orElseGet(() -> Ref.of("body:" + HexFormat.of().formatHex(sha256(message.body()))));
-    }
-
-    private static boolean matches(Secret secret, byte[] data, String presented) {
-        String expected = Hmac.sha256Hex(secret, data);
-        return MessageDigest.isEqual(
-                expected.getBytes(StandardCharsets.UTF_8), presented.trim().getBytes(StandardCharsets.UTF_8));
     }
 
     private static Map<String, String> form(RawMessage message) {

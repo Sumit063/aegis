@@ -1,8 +1,12 @@
 package dev.aegis.provider.spi;
 
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.Objects;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 /**
  * A secret value. It never prints itself, so a secret cannot leak through a log line, an exception
@@ -29,6 +33,25 @@ public record Secret(String value) {
     /** Constant-time comparison, for credentials presented by callers. */
     public boolean matches(String presented) {
         return presented != null && MessageDigest.isEqual(bytes(), presented.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Hex HMAC-SHA256 of {@code data} with this secret as the key. */
+    public String hmacSha256Hex(byte[] data) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(bytes(), "HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal(data));
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("HmacSHA256 unavailable", e);
+        }
+    }
+
+    /** Whether {@code presented} is the hex HMAC-SHA256 of {@code data} with this secret (constant time). */
+    public boolean signed(byte[] data, String presented) {
+        return presented != null
+                && MessageDigest.isEqual(
+                        hmacSha256Hex(data).getBytes(StandardCharsets.UTF_8),
+                        presented.trim().getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
