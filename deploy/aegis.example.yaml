@@ -21,6 +21,14 @@
 #       secrets:
 #         secret-key: [ "${STRIPE_SECRET_KEY}" ]  # sk_test_/rk_test_ outside production
 #         webhook: [ "${STRIPE_WEBHOOK_SECRET}", "${STRIPE_WEBHOOK_SECRET_PREVIOUS:}" ]
+#     cashfree:                                   # /in/cashfree, /gw/cashfree/...
+#       adapter: cashfree
+#       application: shop
+#       base-url: https://sandbox.cashfree.com/pg   # https://api.cashfree.com/pg only in production
+#       settings:
+#         client-id: ${CASHFREE_CLIENT_ID}
+#       secrets:
+#         client-secret: [ "${CASHFREE_CLIENT_SECRET}" ]   # also verifies webhooks
 #   applications:
 #     shop:
 #       api-key: ${SHOP_AEGIS_API_KEY}            # the shop's key for /gw (32+ characters)
