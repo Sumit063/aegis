@@ -374,6 +374,18 @@ class RazorpayAdapterTest {
         assertThat(adapter.supports(CallKind.PAY_REQUEST)).isFalse();
     }
 
+    /** The ID goes into the provider URL with the merchant's key: it can never name another resource. */
+    @ParameterizedTest(name = "payment_id {0} → refused")
+    @CsvSource(
+            delimiter = '|',
+            value = {"'../orders'", "'pay_Y/refunds'", "'pay_Y?expand=card'", "''", "'pay Y'"})
+    void statusChecksNeedASafePaymentId(String paymentId) {
+        RawMessage request = RawMessage.of(Map.of(), "{\"payment_id\":\"" + paymentId + "\"}");
+
+        assertThatThrownBy(() -> adapter.prepare(CallKind.STATUS_CHECK, request, Razorpay.connection()))
+                .isInstanceOf(UnparseableMessageException.class);
+    }
+
     @Test
     void liveKeysOnlyInProduction() {
         adapter.validate(Razorpay.connection("rzp_test_abc"), false);

@@ -54,4 +54,12 @@ From an external review of correctness, abuse resistance and recovery; each is o
 | H7 | Timestamp requirements by message type, enforced in the domain | done |
 | H8 | Backups in the stack, `GET /admin/evidence`, weekly automated restore rehearsal | done |
 
-M2–M4 features are added here after the hardening batches.
+## M2 — more providers, load and failure tests
+
+| ID | Feature | Status |
+|---|---|---|
+| F17 | Stripe adapter: `Stripe-Signature`, PaymentIntents and refunds; freshness judged at arrival | done |
+| F18 | Cashfree adapter: timestamped HMAC, exact decimal amounts, orders and payment status | planned |
+| F19 | Failure lab: kill and restart Aegis, Kafka and PostgreSQL under load; every payment delivered | planned |
+
+M3–M4 features are added here when M2 is done.

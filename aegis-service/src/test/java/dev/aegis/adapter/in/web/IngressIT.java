@@ -98,7 +98,7 @@ class IngressIT extends IntegrationTest {
 
     @Test
     void unknownConnectionAndOversizedBodies() throws Exception {
-        assertThat(post("/in/stripe", "{}", Map.of()).statusCode()).isEqualTo(404);
+        assertThat(post("/in/nope", "{}", Map.of()).statusCode()).isEqualTo(404);
         assertThat(post("/in/razorpay", "x".repeat(70_000), Map.of()).statusCode())
                 .isEqualTo(413);
     }
