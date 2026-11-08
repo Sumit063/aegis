@@ -1,0 +1,6 @@
+# Failure lab overlay (lab/failures.sh): the gateway retries unacknowledged webhooks, as Razorpay
+# does for 24 hours, compressed to minutes.
+services:
+  mock-gateway:
+    environment:
+      MOCK_WEBHOOK_RETRY: 5m

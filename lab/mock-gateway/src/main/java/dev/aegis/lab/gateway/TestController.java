@@ -74,6 +74,9 @@ class TestController {
                 : null;
         Event event = webhooks.create(account, payment);
         int status = Boolean.FALSE.equals(body.webhook()) ? 0 : webhooks.deliver(account, event);
+        if (!Boolean.FALSE.equals(body.webhook()) && (status < 200 || status >= 300)) {
+            webhooks.retry(account, event, properties.webhookRetry());
+        }
         return new CheckoutResult(payment.id(), payment.orderId(), signature, payment.status(), event.id(), status);
     }
 

@@ -7,6 +7,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -54,6 +55,30 @@ class Webhooks {
 
     Optional<Event> find(String id) {
         return Optional.ofNullable(events.get(id));
+    }
+
+    /**
+     * Retries an unacknowledged event once a second until the merchant answers 2xx or {@code window}
+     * has passed, in the background, as a provider keeps retrying after its first attempt.
+     */
+    void retry(Account account, Event event, Duration window) {
+        if (window.isZero()) {
+            return;
+        }
+        Instant until = Instant.now().plus(window);
+        Thread.ofVirtual().start(() -> {
+            try {
+                while (Instant.now().isBefore(until)) {
+                    Thread.sleep(1_000);
+                    int status = deliver(account, event);
+                    if (status >= 200 && status < 300) {
+                        return;
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
     }
 
     /** Delivers an event and returns the receiver's HTTP status, or 0 if it could not be reached. */
