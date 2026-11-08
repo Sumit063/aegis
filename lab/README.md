@@ -28,6 +28,17 @@ be fulfilled exactly once.
 
 Latest results: [RESULTS.md](RESULTS.md). CI runs the lab on every push.
 
+## Failure lab
+
+```bash
+lab/failures.sh                   # traffic through Aegis while Aegis, Kafka, PostgreSQL are each SIGKILLed
+FAULTS=kafka DOWN=10 lab/failures.sh
+```
+
+Genuine payments keep flowing while each component is killed and restarted in turn; the mock
+gateway retries unacknowledged webhooks (`compose.failures.yaml`). Every order the shop placed must
+end with exactly one fulfilment. Latest results: [FAILURES.md](FAILURES.md); CI runs it on every push.
+
 Everything here uses fake, lab-only secrets and runs on a private Docker network. Nothing in the
 lab talks to a real gateway.
 

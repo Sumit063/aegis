@@ -32,7 +32,8 @@ What always holds, on every profile:
 - **Facts at most once.** A message ID and a forwardable fact exist once (database keys, D25).
 - **Not claimed:** exactly-once delivery, or zero loss when a disk is lost without the profile below.
 
-What survives which failure:
+What survives which failure (the first four rows are exercised under traffic by the *Failure lab*,
+`lab/failures.sh`, on every CI run):
 
 | Failure | Single-broker profile (dev, staging, today's single host) | Production durability profile |
 |---|---|---|
