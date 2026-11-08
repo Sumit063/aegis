@@ -17,7 +17,7 @@ echo "Aegis · $ENV_NAME"
 # 1. Containers: running, and healthy where they have a health check. Locally the service runs
 #    from the IDE, so only its dependencies are containers.
 services=(postgres kafka)
-[[ "$ENV_NAME" != local ]] && services+=(aegis)
+[[ "$ENV_NAME" != local ]] && services+=(aegis backup)
 for s in "${services[@]}"; do
   state="$(docker inspect -f '{{.State.Status}}{{if .State.Health}} {{.State.Health.Status}}{{end}}' "$PROJECT-$s-1" 2>/dev/null)"
   case "$state" in
@@ -25,6 +25,15 @@ for s in "${services[@]}"; do
     *) fail "$s: ${state:-not found}" ;;
   esac
 done
+
+# Servers keep a daily database dump (RUNBOOK §5); the newest must be under 26 hours old.
+if [[ "$ENV_NAME" != local ]]; then
+  if docker exec "$PROJECT-backup-1" find /backups -name 'aegis-*.dump' -mmin -1560 2>/dev/null | grep -q .; then
+    pass "backup: taken in the last 26 h"
+  else
+    fail "backup: none in the last 26 h"
+  fi
+fi
 
 # 2. The service, through its management port (never exposed beyond 127.0.0.1).
 if [[ "$ENV_NAME" == local ]]; then
