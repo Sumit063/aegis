@@ -23,7 +23,7 @@ Scope: M1 (Razorpay). Later providers are adapters; the engine, APIs and tables 
 | `POST /gw/{connection}/validations` | Application | Validation call, passed through to the provider |
 | `POST /gw/{connection}/payments` | Application | Payment request (server-to-server providers: NPCI/BBPS) |
 | `POST /gw/{connection}/status` | Application | Status check; the only way a status check ever happens |
-| `GET/POST/PUT /admin/…` | Operators (private, admin key) | `payments/{id}`, `payments?ref=`, `validations?ref=`, `blocked`, `payments/{id}/messages/{n}/forward`, `settings` |
+| `GET/POST/PUT /admin/…` | Operators (private, admin key) | `payments/{id}`, `payments?ref=`, `validations?ref=`, `blocked`, `payments/{id}/messages/{n}/forward`, `settings`, `evidence` (sealed values per key; opens the most recent, never shows them) |
 
 Gateway API bodies are **provider-native**: the application sends what it would have sent to the
 provider. Aegis adds authentication, signing and encryption, and returns the provider's reply plus

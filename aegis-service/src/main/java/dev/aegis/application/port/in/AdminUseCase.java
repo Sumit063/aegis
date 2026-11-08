@@ -26,4 +26,7 @@ public interface AdminUseCase {
      * @throws BadRequestException when the entry does not exist, was blocked, or is not forwarded
      */
     void reforward(long paymentId, int entry);
+
+    /** Opens the {@code sample} most recent sealed values to prove the configured keys still read them. */
+    EvidenceReport evidence(int sample);
 }
