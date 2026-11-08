@@ -13,7 +13,6 @@ import dev.aegis.provider.spi.PreparedCall;
 import dev.aegis.provider.spi.ProviderAdapter;
 import dev.aegis.provider.spi.RawMessage;
 import dev.aegis.provider.spi.Reply;
-import dev.aegis.provider.spi.Secret;
 import dev.aegis.provider.spi.UnparseableMessageException;
 import java.net.URI;
 import java.net.URLDecoder;
@@ -106,7 +105,7 @@ public final class RazorpayAdapter implements ProviderAdapter {
             String presented = message.header(SIGNATURE).orElse(null);
             return presented != null
                     && connection.secrets().all(WEBHOOK).stream()
-                            .anyMatch(secret -> matches(secret, message.body(), presented));
+                            .anyMatch(secret -> secret.signed(message.body(), presented));
         }
         Map<String, String> form = form(message);
         String orderId = form.get("razorpay_order_id");
@@ -116,7 +115,7 @@ public final class RazorpayAdapter implements ProviderAdapter {
             return false;
         }
         byte[] signed = (orderId + "|" + paymentId).getBytes(StandardCharsets.UTF_8);
-        return connection.secrets().all(KEY_SECRET).stream().anyMatch(secret -> matches(secret, signed, presented));
+        return connection.secrets().all(KEY_SECRET).stream().anyMatch(secret -> secret.signed(signed, presented));
     }
 
     @Override
@@ -299,12 +298,6 @@ public final class RazorpayAdapter implements ProviderAdapter {
                 .filter(id -> !id.isBlank())
                 .map(Ref::of)
                 .orElseGet(() -> Ref.of("body:" + HexFormat.of().formatHex(sha256(message.body()))));
-    }
-
-    private static boolean matches(Secret secret, byte[] data, String presented) {
-        String expected = Hmac.sha256Hex(secret, data);
-        return MessageDigest.isEqual(
-                expected.getBytes(StandardCharsets.UTF_8), presented.trim().getBytes(StandardCharsets.UTF_8));
     }
 
     private static Map<String, String> form(RawMessage message) {
