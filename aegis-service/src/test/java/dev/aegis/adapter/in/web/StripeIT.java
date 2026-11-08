@@ -197,7 +197,7 @@ class StripeIT extends IntegrationTest {
                                 "X-Ignored",
                                 "1")
                         .statusCode())
-                .isIn(303, 401);
+                .isEqualTo(303);
 
         await().atMost(Duration.ofSeconds(15)).until(() -> verdicts(id).contains("BLOCKED REPLAY"));
         assertThat(delivered(id)).isEmpty();

@@ -230,7 +230,8 @@ class StripeAdapterTest {
                 "'amount=20.00&currency=usd&metadata%5Border_id%5D=SHOP-1'",
                 "'amount=-5&currency=usd&metadata%5Border_id%5D=SHOP-1'",
                 "'amount=2000&metadata%5Border_id%5D=SHOP-1'",
-                "'amount=2000&currency=zz&metadata%5Border_id%5D=SHOP-1'"
+                "'amount=2000&currency=zz&metadata%5Border_id%5D=SHOP-1'",
+                "'amount=2000&amount=1&currency=usd&metadata%5Border_id%5D=SHOP-1'"
             })
     void aPaymentIntentNeedsAnOrderAnIntegerAmountAndACurrency(String form) {
         assertThatThrownBy(() -> adapter.facts(CallKind.VALIDATION, RawMessage.of(Map.of(), form)))

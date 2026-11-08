@@ -298,14 +298,17 @@ public final class StripeAdapter implements ProviderAdapter {
 
     private record Signature(long timestamp, List<String> v1) {}
 
+    /** A field given twice is refused: Aegis and Stripe must never read different values. */
     private static Map<String, String> form(RawMessage message) {
         Map<String, String> fields = new LinkedHashMap<>();
         for (String pair : message.text().split("&")) {
             int eq = pair.indexOf('=');
-            if (eq > 0) {
-                fields.putIfAbsent(
-                        URLDecoder.decode(pair.substring(0, eq), StandardCharsets.UTF_8),
-                        URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8));
+            if (eq > 0
+                    && fields.put(
+                                    URLDecoder.decode(pair.substring(0, eq), StandardCharsets.UTF_8),
+                                    URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8))
+                            != null) {
+                throw new UnparseableMessageException("a request field is given twice");
             }
         }
         return fields;
