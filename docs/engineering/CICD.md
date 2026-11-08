@@ -51,6 +51,8 @@ branch keeps the environment branches identical in content, just at different po
     4. deploy         staging → Ubuntu host; pull :<sha>; compose up; wait for readiness
     5. rollback       unhealthy → previous tag of that environment; job fails
     6. check          deploy/check.sh; report on the run's summary page; job fails on any ✗
+  Restore rehearsal  (self-hosted, weekly and on demand)
+    7. rehearse       deploy/rehearse-restore.sh staging: newest dump → throwaway copy → evidence opens
 ```
 
 Manual deploys and rollbacks: run the CD workflow by hand with an environment and a SHA.
@@ -99,9 +101,9 @@ pull-request code — and the repository is private, so forks cannot reach it.
 
 ```
 /home/aegis/
-  aegis/staging/    compose.yaml, .env (staging secrets, mode 600), aegis.yaml (connections, applications)
+  aegis/staging/    compose.yaml, .env (staging secrets, mode 600), aegis.yaml (connections, applications),
+                    backups/ (daily pg_dump, newest 14, written by the backup container)
   aegis/prod/       (when production moves here or to its own host)
-  backups/          nightly PostgreSQL dumps per environment (M1)
  container aegis-runner   GitHub Actions runner (restarts automatically)
 ```
 

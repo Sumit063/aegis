@@ -1,0 +1,27 @@
+name: Restore rehearsal
+
+# Restores staging's newest backup into a throwaway copy and proves it is usable (RUNBOOK §5).
+# Runs on the host, as the user that deploys, so it can read the environment's keys.
+on:
+  schedule:
+    - cron: "30 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rehearse:
+    name: Rehearse staging restore
+    runs-on: [self-hosted, aegis-host]
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: deploy
+      - name: Restore the newest backup into a copy
+        run: |
+          deploy/rehearse-restore.sh staging | tee report.txt
+          { echo '```'; cat report.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

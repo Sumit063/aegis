@@ -5,6 +5,7 @@ import dev.aegis.adapter.in.web.dto.SettingsDto;
 import dev.aegis.adapter.in.web.dto.ValidationDto;
 import dev.aegis.adapter.in.web.security.AdminAuthentication;
 import dev.aegis.application.port.in.AdminUseCase;
+import dev.aegis.application.port.in.EvidenceReport;
 import dev.aegis.application.port.in.SettingsUseCase;
 import dev.aegis.config.ConditionalOnRole;
 import dev.aegis.config.Role;
@@ -62,6 +63,12 @@ class AdminController {
     ResponseEntity<Void> reforward(@PathVariable long id, @PathVariable int n) {
         admin.reforward(id, n);
         return ResponseEntity.accepted().build();
+    }
+
+    /** Proves stored evidence still opens (after a restore, before retiring a key). */
+    @GetMapping("/evidence")
+    EvidenceReport evidence(@RequestParam(defaultValue = "200") int sample) {
+        return admin.evidence(sample);
     }
 
     @GetMapping("/settings")

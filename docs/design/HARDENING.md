@@ -109,7 +109,7 @@ Batches: **H1** payment facts · **H2** database-enforced identities · **H3** a
 | Correlation IDs through HTTP and Kafka | ingress record ID only | done: `X-Request-Id` → MDC → Kafka record → Checker logs; `X-Aegis-Message-Id` on deliveries | H5 ✓ |
 | Metrics and alerts | verdicts, ack latency, forwards, lag | done: `aegis_dead_letters_total`, `aegis_ingress_limited_total`, alerts | H3 ✓ |
 | Readiness reflects dependencies | database only | done: readiness = database + Kafka (`FailureIT`) | H5 ✓ |
-| Backup, restore, replay runbook | not written | done: [RUNBOOK](../engineering/RUNBOOK.md); restore rehearsal is manual (§12); guarantees per failure and retention policy (H6) | H5 ✓ H6 ✓ |
+| Backup, restore, replay runbook | not written | done: [RUNBOOK](../engineering/RUNBOOK.md); guarantees per failure and retention policy (H6); daily dumps in the stack, a weekly automated restore rehearsal and `GET /admin/evidence` (H8: the documented nightly dump had never been installed on the host) | H5 ✓ H6 ✓ H8 ✓ |
 
 ## 10. Failure-injection suite (review items 1–26)
 
@@ -126,7 +126,6 @@ It found and fixed a Forwarder pacing limit (end-to-end p99 in a burst 19.3 s �
 
 | Item | Why open | Plan |
 |---|---|---|
-| Restore rehearsal from a real backup (item 26) | needs a scheduled `pg_dump` on the host first | add the nightly job to the host and rehearse once; RUNBOOK §5 has the commands |
 | Merchant acknowledgement lost after processing (item 19) | outside Aegis: needs the merchant to dedupe by `id` | documented contract (LLD §8, RUNBOOK §2); the lab shop's handling could be made idempotent by `id` as an example |
 | Forwarder crash mid-delivery (item 20) | covered by design (lease expiry re-sends; stable `id`), not by an automated kill test | add a test that kills the claiming transaction holder |
 | Multi-instance limits | per-instance by design (D26) | a shared limiter only if real traffic needs it |
