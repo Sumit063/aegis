@@ -17,3 +17,4 @@ secrets/
 
 # Local AI agent state (project skills in .claude/skills are committed)
 .claude/settings.local.json
+deploy/backups/

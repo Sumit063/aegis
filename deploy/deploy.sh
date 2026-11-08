@@ -32,6 +32,8 @@ if [[ ! -f .env ]]; then
 fi
 
 # Connections and applications: created once from the template, then edited on the host.
+mkdir -p backups && chmod 700 backups
+
 if [[ ! -f aegis.yaml ]]; then
   cp "$SRC_DIR/aegis.example.yaml" aegis.yaml
   echo "✓ created $DEPLOY_DIR/aegis.yaml (no connections yet)"

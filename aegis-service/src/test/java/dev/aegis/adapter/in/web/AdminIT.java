@@ -100,6 +100,30 @@ class AdminIT extends IntegrationTest {
         assertThat(admin("GET", "/settings", null, SHOP_API_KEY).statusCode()).isEqualTo(401);
     }
 
+    /** After a restore or before a key is retired: every stored value still opens, contents never shown. */
+    @Test
+    void provesStoredEvidenceStillOpens() throws Exception {
+        String orderId = unique("order_");
+        Scenario.order(validations, tx, orderId, 49_900);
+        long id = captured(orderId, unique("pay_")).paymentId();
+
+        JsonNode healthy = get("/evidence");
+        assertThat(healthy.get("unreadable").asInt()).isZero();
+        assertThat(healthy.get("checked").asInt()).isPositive();
+        assertThat(healthy.get("sealedByKey").properties()).isNotEmpty();
+        assertThat(healthy.toString()).doesNotContain("enc:v1");
+
+        // A key that is no longer configured (retired too early) makes its values unreadable.
+        jdbc.update(
+                "UPDATE payments SET messages = regexp_replace(messages::text, 'enc:v1:[^:]+:', 'enc:v1:retired:', 'g')::jsonb,"
+                        + " updated_at = now() WHERE id = ?",
+                id);
+        JsonNode broken = get("/evidence");
+        assertThat(broken.get("unreadable").asInt()).isPositive();
+        assertThat(broken.at("/sealedByKey/retired").asLong()).isPositive();
+        jdbc.update("DELETE FROM payments WHERE id = ?", id);
+    }
+
     @Test
     void findsEverythingByAnyReferenceAndListsBlocks() throws Exception {
         String orderId = unique("order_");
