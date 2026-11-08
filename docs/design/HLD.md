@@ -41,8 +41,8 @@ way, for every provider.
 ```
                 ┌──────────────────────────── AEGIS ─────────────────────────────┐
  Application ──►│ OUT  validation · payment request · status check (app-initiated)│──► Provider
- (holds no      │      check → sign/encrypt with provider secrets → record        │   (Razorpay, Paytm,
-  provider      │                                                                │    Stripe, NPCI UPI,
+ (holds no      │      check → sign/encrypt with provider secrets → record        │   (Razorpay, Stripe,
+  provider      │                                                                │    Cashfree, NPCI UPI,
   secrets)   ◄──│ IN   callback · webhook · async response · reply                │◄──  BBPS, aggregators)
   original +    │      verify → check → record → forward or block                 │
   verdict       └────────────────────────────────────────────────────────────────┘
@@ -55,7 +55,7 @@ Every payment system has the same two steps, which is why one engine fits all:
 | BBPS (COU ↔ NPCI) | Bill fetch | app → COU → NPCI | async response + Ack | XML · mTLS + XML signature |
 | UPI (PSP ↔ NPCI) | Validate address | `ReqPay` | `RespPay` + Ack | XML · mTLS + XML signature |
 | Razorpay | Create order | customer's browser (Checkout) | callback + webhook | JSON · TLS + HMAC-SHA256 |
-| Paytm-style gateway | Initiate transaction | customer's browser/app | callback + webhook | JSON · TLS + checksum |
+| Cashfree | Create order | customer's browser/app | webhook | JSON · TLS + HMAC + timestamp; decimal amounts |
 | Stripe | Create PaymentIntent | customer's browser/app | webhook | JSON · TLS + HMAC + timestamp |
 
 With gateways, step ② happens in the browser, so Aegis sees ① and the results. With NPCI it sees
@@ -77,7 +77,7 @@ any of them; only the adapter changes.
 
 | Runs Aegis | Upstream it talks to | Validation | Inbound messages | Adapter |
 |---|---|---|---|---|
-| Merchant / app | Gateway | create order | callback, webhook | Razorpay, Stripe, Paytm-style |
+| Merchant / app | Gateway | create order | callback, webhook | Razorpay, Stripe, Cashfree |
 | Recharge / bill app (BBPS COU) | NPCI Bharat BillPay | bill fetch | async payment response | BBPS (XML, signed) |
 | Gateway (e.g. Razorpay) | acquiring bank | payment initiation | bank callback | bank-specific |
 | UPI PSP / bank | NPCI UPI | validate address | `RespPay` | UPI (XML, signed) |
@@ -188,6 +188,6 @@ money.
 |---|---|
 | M0 | Exploit Lab: reproduce the CVE classes against a vulnerable reference application |
 | M1 | Core gateway with Razorpay: inbound checks, outbound proxy, forwarding, admin |
-| M2 | Stripe and Paytm-style adapters; load and failure tests |
+| M2 | Stripe and Cashfree adapters; load and failure tests |
 | M3 | NPCI-style XML adapters (BBPS, UPI) against a simulator |
 | M4 | Partner API protection and rate limits |
