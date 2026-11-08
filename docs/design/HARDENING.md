@@ -164,3 +164,14 @@ Still open after H6 (in addition to §12):
 - Unresolved assumption: Razorpay's payment entity stays `captured` after partial refunds and becomes
   `refunded` only when fully refunded, with `amount_refunded` cumulative (Razorpay payments and refunds
   API documentation); the adapter relies on it.
+
+### M2 provider assumptions (F17, F18)
+
+Built from the providers' public documentation and tested against recorded-shape fixtures, not yet
+against a live sandbox:
+- Stripe: a refunded PaymentIntent stays `succeeded`; `refund.created`/`refund.updated` carry the
+  same refund ID; `t` is re-signed per delivery (documented).
+- Cashfree: a refunded payment's `payment_status` stays `SUCCESS`; `payment_amount` equals
+  `order_amount` unless an offer applies (then `AMOUNT_MISMATCH`, fail closed); whether
+  `x-webhook-timestamp` is re-signed per retry is not documented (the 25 h window does not depend
+  on it); late success after `USER_DROPPED` is allowed by design (D31).

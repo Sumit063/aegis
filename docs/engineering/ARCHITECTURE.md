@@ -53,7 +53,7 @@ aegis-service/src/main/java/dev/aegis/
     service/                     *Service: use-case implementations, transaction boundaries
   provider/
     spi/                         ProviderAdapter, RawMessage, ParsedMessage, SecretSet, registry
-    razorpay/                    M1; stripe/ (M2); later cashfree/, bbps/, upi/, one package each
+    razorpay/                    M1; stripe/, cashfree/ (M2); later bbps/, upi/, one package each
   adapter/
     in/web/controller/           *Controller: ingress /in, Gateway API /gw, Admin /admin
     in/web/dto/                  request/response records (the HTTP contract)

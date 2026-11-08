@@ -35,15 +35,20 @@ public record Secret(String value) {
         return presented != null && MessageDigest.isEqual(bytes(), presented.getBytes(StandardCharsets.UTF_8));
     }
 
-    /** Hex HMAC-SHA256 of {@code data} with this secret as the key. */
-    public String hmacSha256Hex(byte[] data) {
+    /** HMAC-SHA256 of {@code data} with this secret as the key. */
+    public byte[] hmacSha256(byte[] data) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(bytes(), "HmacSHA256"));
-            return HexFormat.of().formatHex(mac.doFinal(data));
+            return mac.doFinal(data);
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException("HmacSHA256 unavailable", e);
         }
+    }
+
+    /** Hex HMAC-SHA256 of {@code data} with this secret as the key. */
+    public String hmacSha256Hex(byte[] data) {
+        return HexFormat.of().formatHex(hmacSha256(data));
     }
 
     /** Whether {@code presented} is the hex HMAC-SHA256 of {@code data} with this secret (constant time). */
