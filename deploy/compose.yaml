@@ -81,6 +81,10 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+    # Connection and application secrets (the ${...} in aegis.yaml) come from .env as they are.
+    env_file:
+      - path: .env
+        required: false
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
       AEGIS_VERSION: ${AEGIS_TAG:-master}
