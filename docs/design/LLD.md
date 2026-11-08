@@ -171,9 +171,13 @@ holds the exact bytes and headers (case-insensitive lookup). Adapters are found 
 | Provider | verify | ack | Outcome mapping |
 |---|---|---|---|
 | Razorpay (M1) | HMAC-SHA256: webhook body with webhook secret; callback `order_id\|payment_id` with key secret | 2xx | `payment.captured`/`order.paid`→SUCCESS, `payment.failed`→FAILED, `payment.authorized`→PENDING, `refund.processed`→REFUNDED (refund ID, amount, currency required), others→OTHER; signed callback→SUCCESS (no amount: bound to the order by its signature). Required: integer `created_at`, payment `id`, integer `amount`, `currency` — never defaulted; an order request needs `receipt`, integer `amount` and `currency` (mandatory in the Orders API). Status reply: `captured`→SUCCESS (also after partial refunds), `refunded`→REFUNDED observation of `amount_refunded` (not a refund fact) |
-| Stripe (M2) | HMAC-SHA256 over `t.body`, 5-minute tolerance | 2xx | `payment_intent.succeeded`→SUCCESS, … |
-| Paytm-style (M2) | checksum with merchant key | 2xx | `TXN_SUCCESS`→SUCCESS, … |
+| Stripe (M2) | `Stripe-Signature: t=…,v1=…`: hex HMAC-SHA256 of `t.body` with the endpoint secret, any `v1` with any configured secret (rolling), other schemes ignored; no browser channel (the redirect is unsigned) | 2xx | `payment_intent.succeeded`→SUCCESS with `amount_received` (a partial capture is `AMOUNT_MISMATCH`), `payment_failed`/`canceled`→FAILED, `processing`/`amount_capturable_updated`→PENDING, `refund.created`/`refund.updated` in `succeeded`→REFUNDED (refund ID, amount, currency), others→OTHER. `sentAt` = `t` (signed per delivery); freshness 5 min; event `id` dedupes. The PaymentIntent is validation and payment (`lateSuccessAfterFailure`). Validation `POST /v1/payment_intents` (form: integer `amount`, `currency`, `metadata[order_id]`); status `GET /v1/payment_intents/{id}`: `succeeded`→SUCCESS, `canceled` or `requires_payment_method` after an error→FAILED, other open states→PENDING. Test keys (`sk_test_`/`rk_test_`) outside production |
+| Cashfree (M2) | base64 HMAC-SHA256 of `x-webhook-timestamp` + body with the client secret | 2xx | `PAYMENT_SUCCESS_WEBHOOK`→SUCCESS, … (F18) |
 | BBPS / UPI (M3) | XML-DSig with the switch's public certificate | `<Ack/>` | SUCCESS / FAILURE / PENDING (deemed) / reversal |
+
+IDs an application sends that Aegis puts into a provider URL (status checks) must match
+`[A-Za-z0-9_]{1,128}` (and `-` where the provider uses it), so a reference can never name another
+provider resource.
 
 Status mapping is strict. Only the provider's final-success status maps to `SUCCESS`
 (CVE-2026-41432 treated `complete` as `paid`).

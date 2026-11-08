@@ -12,16 +12,16 @@ class ProviderRegistryTest {
 
     @Test
     void findsAdaptersOnTheClassPath() {
-        assertThat(ProviderRegistry.installed().ids()).contains("example");
+        assertThat(ProviderRegistry.installed().ids()).contains("example", "razorpay", "stripe");
     }
 
     @Test
     void refusesAConnectionForAnAdapterThatIsNotInstalled() {
-        Connection stripe =
-                new Connection("stripe", "stripe", "shop", URI.create("http://x"), Map.of(), new SecretSet(Map.of()));
+        Connection unknown =
+                new Connection("nope", "nope", "shop", URI.create("http://x"), Map.of(), new SecretSet(Map.of()));
 
-        assertThatThrownBy(() -> ProviderRegistry.installed().validate(List.of(stripe), false))
-                .hasMessageContaining("no adapter named stripe");
+        assertThatThrownBy(() -> ProviderRegistry.installed().validate(List.of(unknown), false))
+                .hasMessageContaining("no adapter named nope");
     }
 
     @Test
@@ -32,6 +32,20 @@ class ProviderRegistryTest {
         assertThat(message.header("missing")).isEmpty();
         assertThat(message.toString()).doesNotContain("secret body");
         assertThat(message).isEqualTo(RawMessage.of(Map.of("X-Razorpay-Signature", "abc"), "secret body"));
+    }
+
+    /** RFC 4231 test case 2: the shared HMAC every adapter signs and verifies with. */
+    @Test
+    void secretsSignAndVerifyWithHmacSha256() {
+        Secret key = new Secret("Jefe");
+        byte[] data = "what do ya want for nothing?".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String expected = "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843";
+
+        assertThat(key.hmacSha256Hex(data)).isEqualTo(expected);
+        assertThat(key.signed(data, expected)).isTrue();
+        assertThat(key.signed(data, " " + expected + " ")).isTrue();
+        assertThat(key.signed(data, expected.replace('5', '6'))).isFalse();
+        assertThat(key.signed(data, null)).isFalse();
     }
 
     @Test

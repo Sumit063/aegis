@@ -86,7 +86,7 @@ public class CallbackService implements HandleCallbackUseCase {
         }
         String base = application.returnUrl().toString();
         String signed = ref + "." + verdict + "." + paymentId + "." + timestamp;
-        String signature = Hmac.sha256Hex(application.signingSecret(), signed);
+        String signature = application.signingSecret().hmacSha256Hex(signed.getBytes(StandardCharsets.UTF_8));
         return URI.create(base + (base.contains("?") ? "&" : "?") + "ref=" + encode(ref) + "&verdict=" + verdict
                 + "&payment=" + paymentId + "&ts=" + timestamp + "&signature=" + signature);
     }
