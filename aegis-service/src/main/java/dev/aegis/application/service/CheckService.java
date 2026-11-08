@@ -22,7 +22,6 @@ import dev.aegis.provider.spi.Connection;
 import dev.aegis.provider.spi.ProviderAdapter;
 import dev.aegis.provider.spi.ProviderRegistry;
 import dev.aegis.provider.spi.RawMessage;
-import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -47,7 +46,6 @@ public class CheckService implements CheckMessageUseCase {
     private final PaymentRepository payments;
     private final EvidenceCipherPort cipher;
     private final MetricsPort metrics;
-    private final Clock clock;
 
     public CheckService(
             DirectoryPort directory,
@@ -55,15 +53,13 @@ public class CheckService implements CheckMessageUseCase {
             ValidationRepository validations,
             PaymentRepository payments,
             EvidenceCipherPort cipher,
-            MetricsPort metrics,
-            Clock clock) {
+            MetricsPort metrics) {
         this.directory = directory;
         this.providers = providers;
         this.validations = validations;
         this.payments = payments;
         this.cipher = cipher;
         this.metrics = metrics;
-        this.clock = clock;
     }
 
     @Override
@@ -96,7 +92,9 @@ public class CheckService implements CheckMessageUseCase {
                 .flatMap(payments::lock)
                 .orElseGet(() -> payments.lockOrCreate(
                         parsed.provider(), parsed.paymentRef(), validation == null ? null : validation.id()));
-        Gate.Result result = Gate.receive(parsed, validation, payment, clock.instant(), adapter.policy());
+        // Judged as of arrival (Aegis's own clock at Ingress), not when the Checker gets to it: a
+        // backlog after an outage must not turn genuine messages into replays.
+        Gate.Result result = Gate.receive(parsed, validation, payment, record.receivedAt(), adapter.policy());
 
         if (result.validation() != null && !result.validation().equals(validation)) {
             validations.update(result.validation());
