@@ -94,25 +94,35 @@ One retention policy, applied by the daily retention job and by backup rotation:
 | Validations with no payment | 180 days after last activity | same |
 | Rejected traffic (bad signature, unparseable: untrusted rows) | 7 days | security telemetry, not evidence of money (D26) |
 | Kafka records | Kafka's retention (7 days default) | a buffer, not the record of truth |
-| Backups (`pg_dump`) | 14 daily dumps | restore point for the database |
+| Backups (`pg_dump`) | 14 daily dumps (the `backup` container) | restore point for the database |
 | Evidence keys | until no retained record and no kept backup holds data sealed with them (§6) | a removed key makes that data unreadable |
 
 A restored environment keeps the same policy: the next retention run removes what has aged out.
 
 | What | How | Loss if the host dies |
 |---|---|---|
-| PostgreSQL (all records) | nightly `pg_dump` (below), copied off the host | since the last dump |
+| PostgreSQL (all records) | daily `pg_dump` by the stack's `backup` container into `~/aegis/<env>/backups/`; copy them off the host | since the last dump |
 | Kafka (messages not yet checked) | not backed up; normally drained within seconds | single-broker profile: messages acknowledged but not yet checked (§2) |
 | `.env`, `aegis.yaml` (secrets, configuration) | copy to a password manager / secret store when changed | **everything sealed with the evidence key becomes unreadable without it** |
 
-```bash
-# Backup (run nightly; keep 14)
-c exec -T postgres pg_dump -U aegis -Fc aegis > ~/backups/aegis-staging-$(date +%F).dump
+The `backup` container dumps once a day (on start, then whenever the day's dump is missing) and
+keeps the newest 14; `scripts/check.sh` fails if none is under 26 h old. Dumps are readable only by
+root (mode 600) and hold evidence sealed with the evidence key, so a dump restores only with its
+`.env`. Copying them off the host is still the operator's job: a dump on the same disk does not
+survive the host.
 
-# Restore into a fresh environment: deploy it (same .env and aegis.yaml), stop Aegis, restore, start
+**Rehearsal.** The *Restore rehearsal* workflow (weekly, or `gh workflow run "Restore rehearsal"`)
+runs `deploy/rehearse-restore.sh staging` on the host: it restores the newest dump into a throwaway
+copy (project `aegis-staging-restore`, admin role only, so nothing is received or delivered), starts
+Aegis on it and requires `GET /admin/evidence` to open every sampled value. The copy is removed
+afterwards.
+
+```bash
+# Restore for real into a fresh environment: deploy it (same .env and aegis.yaml), stop Aegis, restore, start
 c stop aegis
-c exec -T postgres pg_restore -U aegis -d aegis --clean --if-exists < ~/backups/aegis-staging-<date>.dump
+c run --rm --no-deps -T --entrypoint pg_restore backup --clean --if-exists --no-owner -d aegis /backups/aegis-<date>.dump
 c start aegis && scripts/check.sh staging
+curl -s -H "$ADMIN" 127.0.0.1:8180/admin/evidence     # "unreadable": 0
 ```
 
 After a restore, messages the providers sent between the dump and the failure are recovered by
@@ -126,5 +136,5 @@ Aegis polling on its own (D2).
 | Provider webhook secret | add the new one first in `aegis.yaml` (`webhook: [new, old]`), deploy, change it at the provider, then remove the old one |
 | Provider API key | create the new key at the provider, replace `key-secret`/`key-id`, deploy, revoke the old key |
 | Application signing secret / API key | coordinate with the application (it verifies Aegis's signature) |
-| Evidence key | add `k2` to `aegis.evidence.keys`, make it `current`, deploy. `k1` still opens old data. Remove `k1` only when no record holds it (`select count(*) from payments where messages::text like '%enc:v1:k1:%'` and the same on `validations.data` return 0, at the latest 180 days after its last use) **and** the oldest kept backup was taken after that (14 more days). |
+| Evidence key | add `k2` to `aegis.evidence.keys`, make it `current`, deploy. `k1` still opens old data. Remove `k1` only when no record holds it (`GET /admin/evidence` shows no `k1` in `sealedByKey`, at the latest 180 days after its last use) **and** the oldest kept backup was taken after that (14 more days). |
 | Admin key | replace `AEGIS_ADMIN_API_KEY` in `.env`, deploy |

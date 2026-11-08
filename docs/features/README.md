@@ -52,5 +52,6 @@ From an external review of correctness, abuse resistance and recovery; each is o
 | H5 | Operations: correlation IDs through HTTP and Kafka, Kafka in readiness, recovery runbook, pipeline benchmark | done |
 | H6 | Post-hardening review: required provider fields, clock skew, refunds as facts, exact guarantees, retention by activity | done |
 | H7 | Timestamp requirements by message type, enforced in the domain | done |
+| H8 | Backups in the stack, `GET /admin/evidence`, weekly automated restore rehearsal | done |
 
 M2–M4 features are added here after the hardening batches.

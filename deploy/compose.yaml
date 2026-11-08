@@ -1,4 +1,4 @@
-# Aegis stack for one environment: PostgreSQL + Kafka (KRaft, single node) + Aegis.
+# Aegis stack for one environment: PostgreSQL + Kafka (KRaft, single node) + Aegis + daily backups.
 # Servers: deploy/deploy.sh <dev|staging|prod> <tag> runs it as project aegis-<env> with that
 #          environment's own .env (secrets, ports, profile). Environments share nothing.
 # Laptop:  docker compose -f deploy/compose.yaml -f deploy/compose.local.yaml up -d postgres kafka
@@ -18,6 +18,33 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  # One pg_dump a day into ./backups (next to this file), the newest 14 kept (RUNBOOK §5). Dumps
+  # hold evidence sealed with the evidence key: they are restorable only together with .env.
+  backup:
+    image: postgres:17.11-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: aegis
+      PGPASSWORD: ${POSTGRES_PASSWORD:-aegis-local-only}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        umask 077
+        while :; do
+          f=/backups/aegis-$$(date -u +%F).dump
+          if [ ! -s "$$f" ]; then
+            if pg_dump -Fc aegis > "$$f.part"; then mv "$$f.part" "$$f" && echo "backup: $$f"; else rm -f "$$f.part"; echo "backup failed"; fi
+          fi
+          ls -1t /backups/aegis-*.dump 2>/dev/null | tail -n +15 | xargs -r rm -f
+          sleep 3600
+        done
 
   kafka:
     image: apache/kafka:4.2.2
