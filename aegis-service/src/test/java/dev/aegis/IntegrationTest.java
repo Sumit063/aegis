@@ -12,8 +12,8 @@ import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
- * Base of every integration test: the whole service against real PostgreSQL and Kafka, with a
- * Razorpay and an example connection for a shop (both pointing at {@link FakeProvider}), a second
+ * Base of every integration test: the whole service against real PostgreSQL and Kafka, with
+ * Razorpay, Stripe and example connections for a shop (both pointing at {@link FakeProvider}), a second
  * application, and a clock tests can move. The containers start once per test run and the Spring context is
  * shared, so each IT adds seconds, not minutes.
  */
@@ -29,6 +29,10 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
             "aegis.connections.razorpay.settings.key-id=rzp_test_it",
             "aegis.connections.razorpay.secrets.key-secret[0]=" + IntegrationTest.RAZORPAY_KEY_SECRET,
             "aegis.connections.razorpay.secrets.webhook[0]=" + IntegrationTest.RAZORPAY_WEBHOOK_SECRET,
+            "aegis.connections.stripe.adapter=stripe",
+            "aegis.connections.stripe.application=shop",
+            "aegis.connections.stripe.secrets.secret-key[0]=" + IntegrationTest.STRIPE_SECRET_KEY,
+            "aegis.connections.stripe.secrets.webhook[0]=" + IntegrationTest.STRIPE_WEBHOOK_SECRET,
             "aegis.connections.example.adapter=example",
             "aegis.connections.example.application=shop",
             "aegis.connections.example.secrets.webhook[0]=" + IntegrationTest.EXAMPLE_WEBHOOK_SECRET,
@@ -46,6 +50,8 @@ public abstract class IntegrationTest {
     public static final String SHOP_SECRET = "shop-signing-secret-for-integration-0001";
     public static final String RAZORPAY_KEY_SECRET = "razorpay-key-secret-it-0001";
     public static final String RAZORPAY_WEBHOOK_SECRET = "razorpay-webhook-secret-it-01";
+    public static final String STRIPE_SECRET_KEY = "sk_test_stripe-secret-key-it-000001";
+    public static final String STRIPE_WEBHOOK_SECRET = "whsec_stripe-webhook-secret-it-01";
     public static final String EXAMPLE_WEBHOOK_SECRET = "example-webhook-secret-it-0001";
     public static final String EXAMPLE_API_KEY = "example-api-key-it-000000001";
     public static final String OTHER_API_KEY = "other-application-api-key-it-00000001";
@@ -67,6 +73,8 @@ public abstract class IntegrationTest {
     static void providers(DynamicPropertyRegistry registry) {
         registry.add(
                 "aegis.connections.razorpay.base-url", () -> FakeProvider.url().toString());
+        registry.add(
+                "aegis.connections.stripe.base-url", () -> FakeProvider.url().toString());
         registry.add(
                 "aegis.connections.example.base-url", () -> FakeProvider.url().toString());
         registry.add(
