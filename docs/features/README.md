@@ -60,6 +60,6 @@ From an external review of correctness, abuse resistance and recovery; each is o
 |---|---|---|
 | F17 | Stripe adapter: `Stripe-Signature`, PaymentIntents and refunds; freshness judged at arrival | done |
 | F18 | Cashfree adapter: timestamped HMAC, exact decimal amounts, orders and payment status | done |
-| F19 | Failure lab: kill and restart Aegis, Kafka and PostgreSQL under load; every payment delivered | planned |
+| F19 | Failure lab: kill and restart Aegis, Kafka and PostgreSQL under load; every payment delivered | done |
 
 M3–M4 features are added here when M2 is done.

@@ -127,7 +127,7 @@ It found and fixed a Forwarder pacing limit (end-to-end p99 in a burst 19.3 s �
 | Item | Why open | Plan |
 |---|---|---|
 | Merchant acknowledgement lost after processing (item 19) | outside Aegis: needs the merchant to dedupe by `id` | documented contract (LLD §8, RUNBOOK §2); the lab shop's handling could be made idempotent by `id` as an example |
-| Forwarder crash mid-delivery (item 20) | covered by design (lease expiry re-sends; stable `id`), not by an automated kill test | add a test that kills the claiming transaction holder |
+| Forwarder crash mid-delivery (item 20) | exercised by the Failure lab (F19: Aegis killed with SIGKILL under traffic, every order fulfilled exactly once), not by a test that stops exactly between send and record | a deterministic hook only if a regression appears |
 | Multi-instance limits | per-instance by design (D26) | a shared limiter only if real traffic needs it |
 | mTLS to merchants | configured at the TLS proxy, not in Aegis | document a reference proxy config with the first production host |
 | Real Razorpay test-mode run | needs a public URL (tunnel) and the dashboard webhook | run when staging gets a public ingress |
