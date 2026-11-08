@@ -85,6 +85,11 @@ c exec kafka bash -c '/opt/kafka/bin/kafka-console-consumer.sh --bootstrap-serve
 
 Replaying is safe: a record already processed is recognised as a repeat.
 
+**Adding a connection or application:** put its secrets in `.env` (mode 600) and the entry in
+`aegis.yaml` (`deploy/aegis.example.yaml` shows each provider), then `c up -d aegis`. Every `.env`
+value is passed into the container, so the `${...}` placeholders resolve; a missing one stops
+startup (`c logs aegis` names it).
+
 ## 5. Retention, backup, restore, disaster recovery
 
 One retention policy, applied by the daily retention job and by backup rotation:
