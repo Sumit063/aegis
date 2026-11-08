@@ -289,6 +289,19 @@ Post-hardening review (HARDENING §13), each finding verified against the code f
 - **Rejected:** using `charge.refunded` as the refund fact (cumulative, no refund identity, it
   would double-count with `refund.*`); counting `pending` refunds (not yet money returned).
 
+### D31 — Cashfree: exact decimal amounts; the environment is the host
+- **Decimal major units are converted exactly.** JSON numbers are read as decimals, never doubles;
+  `amount × 10^digits(currency)` must be a non-negative integer that fits a `long`. `1.005` INR is
+  refused, not rounded: rounding either way would accept an amount nobody sent.
+- **The type and the status must agree** (`PAYMENT_SUCCESS_WEBHOOK` with `payment_status: SUCCESS`);
+  a contradiction is unparseable, never resolved in favour of either.
+- **Late success allowed**: dropped or failed UPI and net-banking payments can be confirmed late by
+  the bank; FAILED after SUCCESS is still a `DOWNGRADE`.
+- **Production is a host**: Cashfree's test and live credentials look alike, so `base-url` is
+  required and `api.cashfree.com` is allowed only in production.
+- **Rejected:** defaulting `order_currency` to INR (Cashfree's own default) and letting Cashfree
+  generate the `order_id` (the application's reference must be its own).
+
 ## Design review log
 
 | # | Issue | Fix |

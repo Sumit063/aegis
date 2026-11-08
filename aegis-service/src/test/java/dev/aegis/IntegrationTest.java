@@ -13,7 +13,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * Base of every integration test: the whole service against real PostgreSQL and Kafka, with
- * Razorpay, Stripe and example connections for a shop (both pointing at {@link FakeProvider}), a second
+ * Razorpay, Stripe, Cashfree and example connections for a shop (both pointing at {@link FakeProvider}), a second
  * application, and a clock tests can move. The containers start once per test run and the Spring context is
  * shared, so each IT adds seconds, not minutes.
  */
@@ -33,6 +33,10 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
             "aegis.connections.stripe.application=shop",
             "aegis.connections.stripe.secrets.secret-key[0]=" + IntegrationTest.STRIPE_SECRET_KEY,
             "aegis.connections.stripe.secrets.webhook[0]=" + IntegrationTest.STRIPE_WEBHOOK_SECRET,
+            "aegis.connections.cashfree.adapter=cashfree",
+            "aegis.connections.cashfree.application=shop",
+            "aegis.connections.cashfree.settings.client-id=TEST-cashfree-it",
+            "aegis.connections.cashfree.secrets.client-secret[0]=" + IntegrationTest.CASHFREE_CLIENT_SECRET,
             "aegis.connections.example.adapter=example",
             "aegis.connections.example.application=shop",
             "aegis.connections.example.secrets.webhook[0]=" + IntegrationTest.EXAMPLE_WEBHOOK_SECRET,
@@ -52,6 +56,7 @@ public abstract class IntegrationTest {
     public static final String RAZORPAY_WEBHOOK_SECRET = "razorpay-webhook-secret-it-01";
     public static final String STRIPE_SECRET_KEY = "sk_test_stripe-secret-key-it-000001";
     public static final String STRIPE_WEBHOOK_SECRET = "whsec_stripe-webhook-secret-it-01";
+    public static final String CASHFREE_CLIENT_SECRET = "cashfree-client-secret-it-00000001";
     public static final String EXAMPLE_WEBHOOK_SECRET = "example-webhook-secret-it-0001";
     public static final String EXAMPLE_API_KEY = "example-api-key-it-000000001";
     public static final String OTHER_API_KEY = "other-application-api-key-it-00000001";
@@ -75,6 +80,7 @@ public abstract class IntegrationTest {
                 "aegis.connections.razorpay.base-url", () -> FakeProvider.url().toString());
         registry.add(
                 "aegis.connections.stripe.base-url", () -> FakeProvider.url().toString());
+        registry.add("aegis.connections.cashfree.base-url", () -> FakeProvider.url() + "/pg");
         registry.add(
                 "aegis.connections.example.base-url", () -> FakeProvider.url().toString());
         registry.add(
