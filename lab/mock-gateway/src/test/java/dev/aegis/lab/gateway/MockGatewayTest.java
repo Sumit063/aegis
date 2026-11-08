@@ -35,10 +35,14 @@ class MockGatewayTest {
     record Received(Map<String, String> headers, String body) {}
 
     static final BlockingQueue<Received> WEBHOOKS = new LinkedBlockingQueue<>();
+    /** The merchant answers 503 to this many webhooks before acknowledging (a merchant that is down). */
+    static final java.util.concurrent.atomic.AtomicInteger FAILURES = new java.util.concurrent.atomic.AtomicInteger();
+
     static final HttpServer MERCHANT = merchant();
 
     @DynamicPropertySource
     static void webhookUrl(DynamicPropertyRegistry registry) {
+        registry.add("mock.webhook-retry", () -> "10s");
         registry.add(
                 "mock.accounts.shop.webhook-url",
                 () -> "http://127.0.0.1:" + MERCHANT.getAddress().getPort() + "/webhooks");
@@ -160,6 +164,26 @@ class MockGatewayTest {
                 .isTrue();
     }
 
+    /** A merchant that is down gets the same event again, once a second, until it acknowledges. */
+    @Test
+    void anUnacknowledgedWebhookIsRetriedUntilTheMerchantAcknowledges() throws Exception {
+        WEBHOOKS.clear();
+        FAILURES.set(2);
+
+        JsonNode result = checkout("{\"key_id\":\"rzp_test_lab\",\"amount\":1000}");
+
+        assertThat(result.get("webhook_status").asInt()).isEqualTo(503);
+        String eventId = result.get("event_id").asString();
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            Received delivery = WEBHOOKS.poll(5, TimeUnit.SECONDS);
+            assertThat(delivery).as("attempt " + attempt).isNotNull();
+            assertThat(delivery.headers().get("x-razorpay-event-id")).isEqualTo(eventId);
+        }
+        assertThat(WEBHOOKS.poll(2, TimeUnit.SECONDS))
+                .as("acknowledged: no more retries")
+                .isNull();
+    }
+
     private JsonNode checkout(String body) throws Exception {
         HttpResponse<String> response = post("/test/checkout", body, null);
         assertThat(response.statusCode()).isEqualTo(200);
@@ -196,7 +220,7 @@ class MockGatewayTest {
                         "x-razorpay-event-id", exchange.getRequestHeaders().getFirst("X-Razorpay-Event-Id"));
                 WEBHOOKS.add(new Received(
                         headers, new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)));
-                exchange.sendResponseHeaders(204, -1);
+                exchange.sendResponseHeaders(FAILURES.getAndUpdate(n -> Math.max(0, n - 1)) > 0 ? 503 : 204, -1);
                 exchange.close();
             });
             server.start();

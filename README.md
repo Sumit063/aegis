@@ -86,7 +86,7 @@ java lab/bench/Bench.java 2000 32                         # pipeline benchmark (
 |---|---|---|
 | M0 | Exploit Lab — reproduce the CVE classes in Docker ([results](lab/RESULTS.md)): 10/10 exploited directly, 10/10 blocked through Aegis | done |
 | M1 | Core gateway with Razorpay ([acceptance](docs/features/F16-acceptance.md)) | done |
-| M2 | Stripe and Cashfree adapters; load and failure tests | in progress |
+| M2 | Stripe and Cashfree adapters; load and failure tests ([failure lab](lab/FAILURES.md), [benchmark](docs/engineering/BENCHMARK.md)) | done |
 | M3 | NPCI-style XML adapters (BBPS, UPI) against a simulator | planned |
 | M4 | Partner API protection and rate limits | planned |
 
