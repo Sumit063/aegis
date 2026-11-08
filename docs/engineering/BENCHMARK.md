@@ -43,6 +43,21 @@ Resource use after the runs: Aegis ~570 MB, Kafka ~380 MB, PostgreSQL ~75 MB, al
 capped delivery near 100 payments/s; under the burst, end-to-end p50/p99 were **9.4 s / 19.3 s**.
 It now drains continuously while work is due (bounded per tick): **2.0 s / 3.5 s** for the same burst.
 
+### M2 re-run (2026-11-08)
+
+Same machine and programs, after Stripe, Cashfree and freshness-at-arrival (F17–F19). Steady was
+run four times; the first, straight after the lab started (cold JIT), is shown separately.
+
+| Run | Throughput | Acknowledgement p50 / p95 / p99 | End-to-end p50 / p95 / p99 | Fulfilled exactly once |
+|---|---|---|---|---|
+| Steady, cold (first run) | 474 req/s | 8.0 / 14.3 / 19.3 ms | 833 / 1,521 / 1,650 ms | 1,000 / 1,000 |
+| Steady, warm (3 runs, range) | 558–816 req/s | 4.8–6.4 / 8.1–12.9 / 10.6–19.6 ms | 481–706 / 1,062–1,342 / 1,219–1,720 ms | 3 × 1,000 / 1,000 |
+| Burst (concurrency 32) | 1,533 req/s | 21.1 / 29.1 / 35.1 ms | 1,538 / 2,582 / 3,048 ms | 2,000 / 2,000 |
+
+Acknowledgement and the burst are unchanged or better. Steady end-to-end p50 is higher than the
+H5 run (362 ms) and varies by ±20 % between consecutive warm runs on this shared VM; it was not
+investigated further. Every forged message was answered 401; no order was fulfilled twice.
+
 ## Reading these numbers
 
 - Acknowledgement (what a provider waits for, Razorpay allows 5 s) stays in milliseconds even in a

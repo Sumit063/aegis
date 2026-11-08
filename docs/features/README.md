@@ -62,4 +62,5 @@ From an external review of correctness, abuse resistance and recovery; each is o
 | F18 | Cashfree adapter: timestamped HMAC, exact decimal amounts, orders and payment status | done |
 | F19 | Failure lab: kill and restart Aegis, Kafka and PostgreSQL under load; every payment delivered | done |
 
-M3–M4 features are added here when M2 is done.
+M2 is done: both adapters pass the shared contract and end-to-end tests, the Failure lab runs in CI,
+and the benchmark was re-run (BENCHMARK). M3–M4 features are added here when they are designed.
