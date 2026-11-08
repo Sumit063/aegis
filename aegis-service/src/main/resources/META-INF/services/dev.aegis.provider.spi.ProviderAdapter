@@ -1,2 +1,3 @@
 dev.aegis.provider.razorpay.RazorpayAdapter
 dev.aegis.provider.stripe.StripeAdapter
+dev.aegis.provider.cashfree.CashfreeAdapter
