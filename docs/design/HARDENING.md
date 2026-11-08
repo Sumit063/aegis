@@ -128,7 +128,7 @@ It found and fixed a Forwarder pacing limit (end-to-end p99 in a burst 19.3 s �
 |---|---|---|
 | Merchant acknowledgement lost after processing (item 19) | outside Aegis: needs the merchant to dedupe by `id` | documented contract (LLD §8, RUNBOOK §2); the lab shop's handling could be made idempotent by `id` as an example |
 | Forwarder crash mid-delivery (item 20) | exercised by the Failure lab (F19: Aegis killed with SIGKILL under traffic, every order fulfilled exactly once), not by a test that stops exactly between send and record | a deterministic hook only if a regression appears |
-| Multi-instance limits | per-instance by design (D26) | a shared limiter only if real traffic needs it |
+| Multi-instance limits | per-instance by design (D26); with several Forwarder instances a payment whose next message becomes due mid-pass can be claimed by a second instance, so that message may be delivered twice (same `id`, first deliveries still in order) | a shared limiter only if real traffic needs it; keep the lease across a pass if duplicate deliveries become noisy |
 | mTLS to merchants | configured at the TLS proxy, not in Aegis | document a reference proxy config with the first production host |
 | Real Razorpay test-mode run | needs a public URL (tunnel) and the dashboard webhook | run when staging gets a public ingress |
 
@@ -175,3 +175,20 @@ against a live sandbox:
   `order_amount` unless an offer applies (then `AMOUNT_MISMATCH`, fail closed); whether
   `x-webhook-timestamp` is re-signed per retry is not documented (the 25 h window does not depend
   on it); late success after `USER_DROPPED` is allowed by design (D31).
+
+## 14. Code review of M1 and H1–H5 (2026-11-08)
+
+The ingress, checker, gateway, callback and forwarder paths and their persistence were read against
+the `code-review` checklist. Findings, each verified in the code:
+
+| Finding | Severity | Status |
+|---|---|---|
+| The Checker judged freshness against its own clock when it reached a message, so a Kafka backlog after an outage could turn genuine messages into `REPLAY` (with a 5-minute provider window, within minutes) | major | fixed (F17): judged at Aegis's arrival time; `CheckerIT.freshnessIsJudgedAtArrivalNotAfterABacklog` |
+| A status check's payment ID went into the provider URL as given (`../orders` reached another resource with the merchant's key) | major | fixed (F17) for Razorpay; Stripe and Cashfree validate IDs from the start |
+| Two identical HMAC helpers | minor | merged into `Secret` (F17) |
+| Several Forwarder instances can deliver a message twice (above, §12) | minor | documented; the application dedupes by `id` (RUNBOOK §2) |
+
+Checked and found sound: acknowledgement only after the Kafka write (forgeries refused, never
+stored over quota); no provider call inside a transaction (gateway reserves, sends, then records in
+separate transactions); payment rows created with `ON CONFLICT DO NOTHING` and read `FOR UPDATE`;
+validation rows locked before checks; secrets only in `PreparedCall` headers, which never print.
