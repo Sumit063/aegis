@@ -5,6 +5,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,6 +31,8 @@ class AegisController {
     private final ShopProperties properties;
     private final Shop shop;
     private final JsonMapper json;
+    // Aegis delivers at least once with a stable id; an id seen before was already applied (LLD §8).
+    private final Set<String> processed = ConcurrentHashMap.newKeySet();
 
     AegisController(ShopProperties properties, Shop shop, JsonMapper json) {
         this.properties = properties;
@@ -45,6 +49,9 @@ class AegisController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("bad Aegis signature");
         }
         JsonNode message = json.readTree(body);
+        if (!processed.add(message.path("id").asString())) {
+            return ResponseEntity.ok("ignored: message already processed");
+        }
         if (!"PASSED".equals(message.path("verdict").asString())) {
             return ResponseEntity.ok("ignored: not passed");
         }
