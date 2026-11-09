@@ -7,6 +7,7 @@ Reproducible attacks against a realistic merchant integration, run once **direct
 |---|---|---|
 | [`mock-gateway`](mock-gateway) | Razorpay-compatible provider: orders, payments, signed webhooks and Checkout results | 8090 |
 | [`vulnshop`](vulnshop) | Reference merchant; each integration flaw F1–F10 is a switch (`shop.flaws`) | 8091 (direct), 8092 (behind Aegis) |
+| [`npci-switch`](npci-switch) | NPCI-style BBPS and UPI switch ([NPCI.md](../docs/design/NPCI.md)): verifies Aegis's signed requests, delivers signed results, emits attack messages | 8093 |
 | Aegis + PostgreSQL + Kafka | the system under test, configured by [`aegis.yaml`](aegis.yaml) | 8080 / 8081 |
 
 ```bash
@@ -39,8 +40,31 @@ Genuine payments keep flowing while each component is killed and restarted in tu
 gateway retries unacknowledged webhooks (`compose.failures.yaml`). Every order the shop placed must
 end with exactly one fulfilment. Latest results: [FAILURES.md](FAILURES.md); CI runs it on every push.
 
+## NPCI lab (M3)
+
+```bash
+lab/npci.sh                       # BBPS and UPI through Aegis to the switch; writes lab/NPCI.md
+KEEP=1 lab/npci.sh                # same, and leave the lab running
+```
+
+The shop's bill desk pays bills (BBPS) and UPI requests through Aegis; the switch's results come back
+through Aegis to the desk (`/aegis/npci`). Legitimate flows (success, deemed then success, failure,
+deemed then reversal) must reach the desk exactly as they happened; every attack in
+[NPCI.md](../docs/design/NPCI.md) §4 must be stopped; 300 concurrent payments must settle once. The
+failure lab runs BBPS bill payments alongside checkout. Latest results: [NPCI.md](NPCI.md).
+
+NPCI keys (the switch's and Aegis's RSA key pairs) are generated once per checkout by
+[`keys.sh`](keys.sh) into `lab/.env` (git-ignored), which compose reads.
+
+| Switch endpoint | Purpose |
+|---|---|
+| `POST /bbps/{BillFetchRequest,BillPaymentRequest,TxnStatusRequest}`, `POST /upi/{ReqValAdd,ReqPay,ReqChkTxn}` | the switch's APIs; a request not signed by Aegis's key is 401 |
+| `PUT /test/next` | what the next payment does: `SUCCESS`, `FAILURE`, `DEEMED_THEN_SUCCESS`, `DEEMED_THEN_FAILURE`, `DEEMED_THEN_REVERSAL`, `SUCCESS_THEN_FAILURE`, `SILENT`; `duplicates`; `wrongAmount` |
+| `POST /test/attack?kind=…&txn=…` | delivers one attack message about a transaction: `forged`, `tampered`, `wrapped`, `unsigned`, `xxe`, `stale`, `sha1`, `hmac`, `keyinfo`, `replay` |
+| `GET /test/received`, `GET /test/txn/{id}` | what the switch saw (proves refused requests never reached it) |
+
 Everything here uses fake, lab-only secrets and runs on a private Docker network. Nothing in the
-lab talks to a real gateway.
+lab talks to a real gateway or switch.
 
 ## Mock gateway
 
