@@ -1,5 +1,7 @@
-# Exploit Lab: a gateway, a shop wired directly to it, and the same shop behind Aegis.
-# Lab-only fake secrets; ports on 127.0.0.1.
+# Exploit Lab: a gateway, a shop wired directly to it, and the same shop behind Aegis; an NPCI
+# switch (BBPS, UPI) whose results reach the shop's bill desk through Aegis.
+# Lab-only fake secrets; NPCI keys are generated per checkout into lab/.env (lab/keys.sh).
+# Ports on 127.0.0.1.
 #   lab/run.sh            builds, starts this, runs every attack, writes lab/RESULTS.md
 name: aegis-lab
 
@@ -35,6 +37,20 @@ services:
       # Stands in for "7 days" so the F10 replay can be shown in seconds.
       SHOP_MEMORY: 3s
     ports: ["127.0.0.1:8091:8091"]
+
+  # NPCI-style switch (docs/design/NPCI.md): verifies Aegis's signed requests, delivers signed
+  # results to Aegis. Its own key signs; Aegis's public key verifies.
+  npci-switch:
+    <<: *java
+    build: { context: .., dockerfile: lab/Dockerfile, args: { MODULE: npci-switch } }
+    environment:
+      PORT: 8093
+      NPCI_SWITCH_KEY: ${NPCI_SWITCH_KEY:?run lab/keys.sh}
+      NPCI_AEGIS_KEY: ${AEGIS_NPCI_PUBLIC:?run lab/keys.sh}
+      NPCI_BBPS_CALLBACK: http://aegis:8080/in/bbps
+      NPCI_UPI_CALLBACK: http://aegis:8080/in/upi
+      NPCI_REDELIVER: 0s
+    ports: ["127.0.0.1:8093:8093"]
 
   # ---- The same shop behind Aegis: only its URLs and credentials differ (EXPLOIT-LAB §1) ----
 
@@ -91,6 +107,8 @@ services:
       # The lab measures the pipeline (lab/bench); the per-connection limiter is tested on its own (LimitsIT).
       AEGIS_LIMITS_REQUESTS_PER_MINUTE: 600000
       AEGIS_LIMITS_BURST: 10000
+      AEGIS_NPCI_KEY: ${AEGIS_NPCI_KEY:?run lab/keys.sh}
+      NPCI_SWITCH_PUBLIC: ${NPCI_SWITCH_PUBLIC:?run lab/keys.sh}
     volumes:
       - ./aegis.yaml:/config/aegis.yaml:ro
     ports: ["127.0.0.1:8080:8080", "127.0.0.1:8081:8081"]

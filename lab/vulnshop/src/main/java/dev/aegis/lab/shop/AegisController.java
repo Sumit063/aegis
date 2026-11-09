@@ -26,8 +26,6 @@ import tools.jackson.databind.json.JsonMapper;
 @RestController
 class AegisController {
 
-    private static final Duration MAX_AGE = Duration.ofMinutes(5);
-
     private final ShopProperties properties;
     private final Shop shop;
     private final JsonMapper json;
@@ -99,20 +97,7 @@ class AegisController {
     }
 
     private boolean fromAegis(String timestamp, String body, String signature) {
-        if (timestamp == null || signature == null || !signature.startsWith("v1=")) {
-            return false;
-        }
-        long sentAt;
-        try {
-            sentAt = Long.parseLong(timestamp);
-        } catch (NumberFormatException e) {
-            return false;
-        }
-        boolean recent = Duration.between(Instant.ofEpochSecond(sentAt), Instant.now())
-                        .abs()
-                        .compareTo(MAX_AGE)
-                <= 0;
-        return recent && Hmac.matches(properties.aegisSecret(), timestamp + "." + body, signature.substring(3));
+        return AegisSignature.verify(properties.aegisSecret(), timestamp, body, signature);
     }
 
     // HTTP header names are case-insensitive; Aegis forwards them as the provider sent them.

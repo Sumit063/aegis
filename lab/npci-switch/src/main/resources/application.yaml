@@ -1,0 +1,20 @@
+# Lab only. Keys and callbacks come from lab/compose.yaml (keys generated per run by lab/keys.sh).
+server:
+  port: 8093
+
+spring:
+  application:
+    name: npci-switch
+  threads:
+    virtual:
+      enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+npci:
+  delay: 200ms
+  redeliver: 0s
