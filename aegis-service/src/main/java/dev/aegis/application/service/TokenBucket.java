@@ -32,7 +32,10 @@ public final class TokenBucket {
         long now = nanos();
         boolean[] granted = new boolean[1];
         states.compute(key, (k, state) -> {
-            double tokens = state == null ? burst : Math.min(burst, state.tokens() + (now - state.atNanos()) * perNano);
+            // A wall clock can step back (NTP, a resumed VM): that is no time passing, never negative refill.
+            double tokens = state == null
+                    ? burst
+                    : Math.min(burst, state.tokens() + Math.max(0, now - state.atNanos()) * perNano);
             granted[0] = tokens >= 1;
             return new State(granted[0] ? tokens - 1 : tokens, now);
         });
