@@ -1,5 +1,7 @@
 package dev.aegis;
 
+import dev.aegis.provider.spi.TestKeys;
+import java.util.List;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -13,7 +15,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * Base of every integration test: the whole service against real PostgreSQL and Kafka, with
- * Razorpay, Stripe, Cashfree and example connections for a shop (both pointing at {@link FakeProvider}), a second
+ * Razorpay, Stripe, Cashfree, BBPS and example connections for a shop (all pointing at {@link FakeProvider}), a second
  * application, and a clock tests can move. The containers start once per test run and the Spring context is
  * shared, so each IT adds seconds, not minutes.
  */
@@ -83,6 +85,15 @@ public abstract class IntegrationTest {
         registry.add("aegis.connections.cashfree.base-url", () -> FakeProvider.url() + "/pg");
         registry.add(
                 "aegis.connections.example.base-url", () -> FakeProvider.url().toString());
+        // NPCI-style connections: keys generated per run, trusted switch key and Aegis's signing key.
+        for (String npci : List.of("bbps")) {
+            String prefix = "aegis.connections." + npci;
+            registry.add(prefix + ".adapter", () -> npci);
+            registry.add(prefix + ".application", () -> "shop");
+            registry.add(prefix + ".base-url", () -> FakeProvider.url().toString());
+            registry.add(prefix + ".secrets.signing-key[0]", () -> TestKeys.privateKey(TestKeys.AEGIS));
+            registry.add(prefix + ".secrets.switch-certificate[0]", () -> TestKeys.publicKey(TestKeys.CURRENT));
+        }
         registry.add(
                 "aegis.applications.shop.forward-url",
                 () -> FakeApplication.url().toString());
