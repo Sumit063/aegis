@@ -227,3 +227,13 @@ Assumptions and limits, stated in NPCI.md §5: validation and status answers are
 contract (NPCI answers them asynchronously, §12); the UPI validation's amount is the payer's own
 instruction (D34); a configured switch certificate is trusted as such (no PKI path validation); mTLS
 belongs to the TLS proxy. Not run against NPCI's own UAT environment, which requires membership.
+
+Code review of F20–F24 against the `code-review` checklist: every NPCI message takes the same
+verify → Kafka → check path; the `Ack` is sent only after the Kafka write; unknown statuses are
+`OTHER` (stored, never news); no key material reaches logs or exceptions; no provider call inside a
+transaction. The JDK compares XML digests with `Arrays.equals`, which is fine here: the digest is of
+public content, and the RSA verification is what authenticates. Minor, accepted: the `Ack`
+timestamp is the system clock, not the injected one; a status reply that fails verification is
+answered `BAD_SIGNATURE` but not stored as evidence (as for unparseable replies); two *concurrent*
+fetches with the same new bill reference can both pass the reuse check, and the second then fails
+closed (500) at the database's unique constraint.
