@@ -147,7 +147,7 @@ class BbpsAdapterTest {
     @Test
     void readsWhatEachRequestSays() {
         assertThat(adapter.facts(CallKind.VALIDATION, unsigned(billFetchRequest("R1"))))
-                .isEqualTo(new CallFacts(Ref.of("R1"), null, null, null));
+                .isEqualTo(new CallFacts(Ref.of("R1"), Ref.of("R1"), null, null));
         assertThat(adapter.facts(CallKind.PAY_REQUEST, unsigned(billPaymentRequest("R1", "T1", 84_000))))
                 .isEqualTo(new CallFacts(null, Ref.of("R1"), Ref.of("T1"), Money.of(84_000, "INR")));
         assertThat(adapter.facts(CallKind.STATUS_CHECK, unsigned(txnStatusRequest("R1", "T1"))))

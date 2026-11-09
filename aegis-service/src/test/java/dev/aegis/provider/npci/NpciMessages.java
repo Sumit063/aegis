@@ -82,6 +82,71 @@ public final class NpciMessages {
         return OffsetDateTime.ofInstant(at, ZoneOffset.ofHoursMinutes(5, 30)).toString();
     }
 
+    // ---- UPI (NPCI.md §3) ----
+
+    private static final String UPI = "xmlns:upi=\"http://npci.org/upi/schema/\"";
+
+    public static String reqValAdd(String validation, String order, String amount) {
+        return """
+                <upi:ReqValAdd %s><Head ver="2.0" ts="%s" orgId="AEGISPSP" msgId="V%s"/>\
+                <Txn id="%s" refId="%s" note="Order %s" type="ValAdd" ts="%s"/>\
+                <Payer addr="customer@psp"/>\
+                <Payee addr="shop@bank"><Amount value="%s" curr="INR"/></Payee>\
+                </upi:ReqValAdd>""".formatted(UPI, ts(Instant.now()), validation, validation, order, order, ts(Instant.now()), amount);
+    }
+
+    public static String respValAdd(String validation, String result) {
+        return """
+                <upi:RespValAdd %s><Head ver="2.0" ts="%s" orgId="NPCI" msgId="VR%s"/>\
+                <Txn id="%s" type="ValAdd"/>\
+                <Resp reqMsgId="V%s" result="%s" maskName="SHOP"/>\
+                </upi:RespValAdd>""".formatted(UPI, ts(Instant.now()), validation, validation, validation, result);
+    }
+
+    public static String reqPay(String validation, String txn, String amount) {
+        return """
+                <upi:ReqPay %s><Head ver="2.0" ts="%s" orgId="AEGISPSP" msgId="P%s"/>\
+                <Txn id="%s" refId="%s" type="PAY" note="Order" ts="%s"/>\
+                <Payer addr="customer@psp"><Amount value="%s" curr="INR"/></Payer>\
+                <Payee addr="shop@bank"/>\
+                </upi:ReqPay>""".formatted(UPI, ts(Instant.now()), txn, txn, validation, ts(Instant.now()), amount);
+    }
+
+    /** {@code type} PAY or REVERSAL; a reversal's own ID is {@code txn}, the payment it reverses {@code orgTxn}. */
+    public static String respPay(
+            String validation,
+            String txn,
+            String type,
+            String orgTxn,
+            String result,
+            String settled,
+            String msgId,
+            Instant at) {
+        String original = orgTxn == null ? "" : " orgTxnId=\"" + orgTxn + "\"";
+        return """
+                <upi:RespPay %s><Head ver="2.0" ts="%s" orgId="NPCI" msgId="%s"/>\
+                <Txn id="%s" refId="%s" type="%s"%s/>\
+                <Resp reqMsgId="P%s" result="%s" errCode="">\
+                <Ref type="PAYER" settAmount="%s" settCurrency="INR" approvalNum="1"/>\
+                <Ref type="PAYEE" settAmount="%s" settCurrency="INR" approvalNum="1"/>\
+                </Resp></upi:RespPay>""".formatted(UPI, ts(at), msgId, txn, validation, type, original, txn, result, settled, settled);
+    }
+
+    public static String reqChkTxn(String validation, String txn) {
+        return """
+                <upi:ReqChkTxn %s><Head ver="2.0" ts="%s" orgId="AEGISPSP" msgId="C%s"/>\
+                <Txn id="C%s" refId="%s" orgTxnId="%s" type="ChkTxn"/>\
+                </upi:ReqChkTxn>""".formatted(UPI, ts(Instant.now()), txn, txn, validation, txn);
+    }
+
+    public static String respChkTxn(String validation, String txn, String type, String result, String settled) {
+        return """
+                <upi:RespChkTxn %s><Head ver="2.0" ts="%s" orgId="NPCI" msgId="CR%s"/>\
+                <Txn id="C%s" refId="%s" orgTxnId="%s" type="%s"/>\
+                <Resp result="%s" settAmount="%s" settCurrency="INR"/>\
+                </upi:RespChkTxn>""".formatted(UPI, ts(Instant.now()), txn, txn, validation, txn, type, result, settled);
+    }
+
     // ---- BBPS (NPCI.md §2) ----
 
     public static String billFetchRequest(String refId) {

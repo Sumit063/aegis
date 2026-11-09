@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | approved |
+| Status | done |
 | Milestone | M3 |
 | Depends on | F20 |
 | Design references | NPCI.md §3 · LLD §6 · DECISIONS D33, D34 · PAYMENT-FLOWS §7 |
@@ -32,7 +32,7 @@ to it.
 |---|---|---|
 | `UpiAdapterContractTest` | unit | the shared SPI contract |
 | `UpiAdapterTest` | unit | outcome table incl. `DEEMED` and reversals, decimals (`499.005` refused), required fields, roots, binding, ack |
-| `UpiIT` | IT | validate → pay → deemed → reversal forwarded; second `ReqPay` while in flight 409; amount mismatch; status check limits |
+| `UpiIT` | IT | validate → pay → deemed → reversal forwarded, then a new payment allowed; second `ReqPay` while in flight 409; a `ReqPay` for another amount 409 `AMOUNT_MISMATCH`; settled amount mismatch; early status check 429 |
 
 ## 5. Done when
-- [ ] Tests pass; `./mvnw verify` green; LLD row, example config
+- [x] Tests pass; `./mvnw verify` green; LLD row, example config

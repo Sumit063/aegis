@@ -121,6 +121,15 @@ public class GatewayService implements GatewayUseCase {
     }
 
     private Answer validate(Connection connection, ProviderAdapter adapter, RawMessage request, CallFacts facts) {
+        // A reference the application chose names one validation: reused, it is refused before the
+        // provider is called (it would otherwise be answered and then fail to be recorded).
+        if (facts.providerRef() != null
+                && Boolean.TRUE.equals(tx.execute(status -> validations
+                        .lock(Ref.of(connection.name()), facts.providerRef())
+                        .isPresent()))) {
+            log.info("{} VALIDATION {} reference already used", connection.name(), facts.providerRef());
+            return refused(Verdict.blocked(BlockReason.DUPLICATE));
+        }
         Instant requestedAt = clock.instant();
         ProviderClientPort.Response response = send(adapter.prepare(CallKind.VALIDATION, request, connection));
         Instant answeredAt = clock.instant();
@@ -174,6 +183,11 @@ public class GatewayService implements GatewayUseCase {
                 now);
         Evidence evidence = Evidence.of(headers(request), cipher.seal(request.body()));
         Reservation reservation = tx.execute(status -> {
+            // A payment request starts a new payment: a known payment reference is never reused (it
+            // would file this request under another payment, possibly of another validation).
+            if (payments.lock(provider, facts.paymentRef()).isPresent()) {
+                return new Reservation(Verdict.blocked(BlockReason.DUPLICATE_PAYMENT), null, 0);
+            }
             Validation validation =
                     validations.lock(provider, facts.providerRef()).orElse(null);
             List<Payment> siblings = validation == null ? List.of() : payments.ofValidation(validation.id());

@@ -36,6 +36,13 @@
 #       secrets:
 #         signing-key: [ "${BBPS_SIGNING_KEY}" ]  # Aegis's RSA key, PKCS#8 (PEM or base64)
 #         switch-certificate: [ "${BBPS_SWITCH_CERTIFICATE}", "${BBPS_SWITCH_CERTIFICATE_PREVIOUS:}" ]
+#     upi:                                        # /in/upi, /gw/upi/... (NPCI.md §3)
+#       adapter: upi
+#       application: shop
+#       base-url: https://upi-switch.example
+#       secrets:
+#         signing-key: [ "${UPI_SIGNING_KEY}" ]
+#         switch-certificate: [ "${UPI_SWITCH_CERTIFICATE}", "${UPI_SWITCH_CERTIFICATE_PREVIOUS:}" ]
 #   applications:
 #     shop:
 #       api-key: ${SHOP_AEGIS_API_KEY}            # the shop's key for /gw (32+ characters)
