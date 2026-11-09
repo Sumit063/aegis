@@ -199,3 +199,41 @@ Checked and found sound: acknowledgement only after the Kafka write (forgeries r
 stored over quota); no provider call inside a transaction (gateway reserves, sends, then records in
 separate transactions); payment rows created with `ON CONFLICT DO NOTHING` and read `FOR UPDATE`;
 validation rows locked before checks; secrets only in `PreparedCall` headers, which never print.
+
+## 15. M3: NPCI-style providers (2026-11-10)
+
+BBPS at the COU and UPI at the payer's PSP (F20–F24), against the contract in
+[NPCI.md](NPCI.md) and the lab's independent switch simulator.
+
+| Test | Result |
+|---|---|
+| XML security (`XmlTest`, `XmlSignatureTest`) | DOCTYPE, XXE and entity expansion refused before parsing; wrapping, ID references, extra transforms, RSA-SHA1, HMAC key confusion and `KeyInfo` keys all fail; a run without the profile check fails the reference and transform tests (the check is load-bearing) |
+| Adapters (`Bbps*Test`, `Upi*Test`) | shared contract for both; every outcome, contradiction, amount format, reference rule and reply binding |
+| Integration (`BbpsIT`, `UpiIT`) | LLD §10 row by row; deemed, reversal and a new payment after it; untrusted replies `BAD_SIGNATURE`; reused references refused |
+| Simulator (`NpciSwitchTest`) | its own signing verifies Aegis's requests and its attack messages fail its own verifier, except the genuinely signed stale and replayed ones |
+| NPCI lab (`lab/npci.sh`, CI) | 6 legitimate flows told exactly as they happened; 16 attacks and misuses stopped (N1–N14); 300 concurrent payments settled once ([NPCI.md](../../lab/NPCI.md)) |
+| Failure lab with bill payments (CI) | Aegis, Kafka, PostgreSQL SIGKILLed under checkout and BBPS traffic: 644/644 orders and 1,012/1,012 bills settled exactly once ([FAILURES.md](../../lab/FAILURES.md)) |
+
+Findings, each reproduced by a failing test before the fix:
+
+| Finding | Severity | Status |
+|---|---|---|
+| The ingress rate limiter refilled from the wall clock: a step back (NTP, a resumed VM) drained a connection's budget, so genuine messages got 429 for as long as the step | major | fixed: elapsed time clamped at zero (`TokenBucketTest`); found by `BbpsIT` moving its test clock back |
+| An application-chosen validation reference used twice was sent to the switch, answered, then failed to be recorded (500, reply lost) | minor | fixed: refused before the call, 409 `DUPLICATE` (`BbpsIT`, lab N13) |
+| A payment request reusing a known payment reference was filed under that payment, possibly another bill's | major | fixed: 409 `DUPLICATE_PAYMENT`, never sent (`BbpsIT`, lab N14) |
+| The lab's simulator had no XML signature code of its own to cross-check Aegis's | — | by design: written independently on the JDK API (D34) |
+
+Assumptions and limits, stated in NPCI.md §5: validation and status answers are synchronous in the
+contract (NPCI answers them asynchronously, §12); the UPI validation's amount is the payer's own
+instruction (D34); a configured switch certificate is trusted as such (no PKI path validation); mTLS
+belongs to the TLS proxy. Not run against NPCI's own UAT environment, which requires membership.
+
+Code review of F20–F24 against the `code-review` checklist: every NPCI message takes the same
+verify → Kafka → check path; the `Ack` is sent only after the Kafka write; unknown statuses are
+`OTHER` (stored, never news); no key material reaches logs or exceptions; no provider call inside a
+transaction. The JDK compares XML digests with `Arrays.equals`, which is fine here: the digest is of
+public content, and the RSA verification is what authenticates. Minor, accepted: the `Ack`
+timestamp is the system clock, not the injected one; a status reply that fails verification is
+answered `BAD_SIGNATURE` but not stored as evidence (as for unparseable replies); two *concurrent*
+fetches with the same new bill reference can both pass the reuse check, and the second then fails
+closed (500) at the database's unique constraint.

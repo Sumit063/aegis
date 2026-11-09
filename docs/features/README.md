@@ -74,5 +74,8 @@ Contract: [NPCI.md](../design/NPCI.md) · decisions D33, D34.
 | F20 | XML signatures (one whole-document profile) and secure XML parsing in the SPI; untrusted replies are `BAD_SIGNATURE` | done |
 | F21 | BBPS adapter at the COU: bill fetch, payment, async response, status checks | done |
 | F22 | UPI adapter at the payer PSP: `ReqValAdd`, `ReqPay`, `RespPay` (deemed, reversal), `ReqChkTxn` | done |
-| F23 | NPCI switch simulator (lab): independent signing, scripted outcomes, redelivery, attack messages | approved |
-| F24 | NPCI lab: 12 attacks, legitimate traffic, load, failures under NPCI traffic, CI job | approved |
+| F23 | NPCI switch simulator (lab): independent signing, scripted outcomes, redelivery, attack messages | done |
+| F24 | NPCI lab: 16 attacks and misuses, legitimate traffic, load, failures under NPCI traffic, CI job | done |
+
+M3 is done: both adapters pass the shared contract and end-to-end tests, the NPCI lab and the
+failure lab with bill payments run in CI, and the review findings are fixed (HARDENING §15).

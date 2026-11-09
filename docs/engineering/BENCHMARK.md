@@ -58,6 +58,22 @@ Acknowledgement and the burst are unchanged or better. Steady end-to-end p50 is 
 H5 run (362 ms) and varies by ±20 % between consecutive warm runs on this shared VM; it was not
 investigated further. Every forged message was answered 401; no order was fulfilled twice.
 
+### M3: XML signatures (2026-11-10)
+
+What the D33 profile costs per NPCI message, measured on the host (Apple M5, 10 cores, JDK 25) with
+`java -cp aegis-service/target/classes lab/bench/XmlBench.java` (after
+`./mvnw -q -DskipTests package -pl aegis-service`): 2,000 warm-up rounds, then 5,000 timed, two runs.
+
+| Operation (RSA-2048, includes parsing) | p50 | p99 | One core | All cores |
+|---|---|---|---|---|
+| Sign a request (Aegis → switch) | 598–623 µs | 730–740 µs | ~1,600/s | |
+| Verify a message (switch → Aegis) | 67–68 µs | 105–183 µs | 13,100–14,000/s | 70,800–76,500/s |
+
+Verification, on every inbound message, adds well under a millisecond to the acknowledgement.
+Signing happens only on application-initiated calls (fetch, payment, status), which then wait on
+the switch for far longer. In the NPCI lab, 300 concurrent bill and UPI payments settled through
+Aegis in about 7 seconds on the shared lab VM (lab/NPCI.md).
+
 ## Reading these numbers
 
 - Acknowledgement (what a provider waits for, Razorpay allows 5 s) stays in milliseconds even in a
