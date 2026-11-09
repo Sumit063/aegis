@@ -112,7 +112,8 @@ public interface ProviderAdapter {
 
     /**
      * Reads the provider's answer. Implementations verify it first where the provider signs replies
-     * (TLS covers the rest) and throw {@link UnparseableMessageException} on a bad signature.
+     * (TLS covers the rest) and throw {@link UntrustedReplyException} on a bad signature, or
+     * {@link UnparseableMessageException} when an authentic reply cannot be read.
      */
     default Reply reply(
             CallKind kind, RawMessage request, int status, RawMessage reply, Connection connection, Instant at) {

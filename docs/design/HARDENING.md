@@ -129,6 +129,7 @@ It found and fixed a Forwarder pacing limit (end-to-end p99 in a burst 19.3 s �
 | Merchant acknowledgement lost after processing (item 19) | outside Aegis: needs the merchant to dedupe by `id` | documented contract (LLD §8, RUNBOOK §2); the lab shop ignores an `id` it already processed (a CI failure-lab run fulfilled 4 of 544 orders twice when a cut delivery was resent) |
 | Forwarder crash mid-delivery (item 20) | exercised by the Failure lab (F19: Aegis killed with SIGKILL under traffic, every order fulfilled exactly once), not by a test that stops exactly between send and record | a deterministic hook only if a regression appears |
 | Multi-instance limits | per-instance by design (D26); with several Forwarder instances a payment whose next message becomes due mid-pass can be claimed by a second instance, so that message may be delivered twice (same `id`, first deliveries still in order) | a shared limiter only if real traffic needs it; keep the lease across a pass if duplicate deliveries become noisy |
+| Asynchronous NPCI answers to validations and status checks | the NPCI-style contract answers bill fetch and status synchronously (NPCI.md §5); NPCI answers them asynchronously | an SPI change for asynchronous answers when a real switch is integrated |
 | mTLS to merchants | configured at the TLS proxy, not in Aegis | document a reference proxy config with the first production host |
 
 **Real Razorpay test-mode run (done, 2026-11-09).** Staging receives Razorpay test-mode webhooks
