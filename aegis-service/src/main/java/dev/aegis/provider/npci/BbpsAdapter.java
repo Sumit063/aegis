@@ -120,7 +120,7 @@ public final class BbpsAdapter implements ProviderAdapter {
         Element root = Npci.request(request, NS, requestRoot(kind));
         Ref bill = Npci.id(Xml.one(root, "Head"), "refId");
         return switch (kind) {
-            case VALIDATION -> new CallFacts(bill, null, null, null);
+            case VALIDATION -> new CallFacts(bill, bill, null, null);
             case PAY_REQUEST ->
                 new CallFacts(null, bill, Npci.id(Xml.one(root, "Txn"), "txnReferenceId"), amount(root));
             case STATUS_CHECK ->

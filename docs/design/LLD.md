@@ -95,7 +95,10 @@ application acts on the forwarded message. The target is always the configured `
   1. authenticate  Authorization: Bearer <app key> (+ client-certificate subject if configured)
                    → 401/403; connection belongs to this application                 → 403
   2. parse         adapter.facts() → merchant_ref, amount, provider_ref, payment_ref   → 400
-  3. checks        payment request: lock validation, status must be CREATED (not FAILED/PAID),
+  3. checks        validation whose reference the application chose (NPCI): that reference
+                   unused                                                     → DUPLICATE (409);
+                   payment request: its payment reference unknown            → DUPLICATE_PAYMENT (409);
+                   lock validation, status must be CREATED (not FAILED/PAID),
                    amount equal, no payment of it still in flight             → BLOCKED (409);
                    if allowed, the request is written as in flight in the same transaction
                    status check: within adapter.enquiryLimits()                 → RATE_LIMIT (429)
@@ -124,8 +127,8 @@ on its own that a request has expired.
 | `NO_VALIDATION` | inbound 9, outbound 3 |
 | `AMOUNT_MISMATCH` | inbound 10, outbound 3 |
 | `DOWNGRADE` | inbound 11, 12 |
-| `DUPLICATE` | inbound 12 |
-| `DUPLICATE_PAYMENT` | inbound 11 (paid twice), outbound 3 (one in flight) |
+| `DUPLICATE` | inbound 12, outbound 3 (an application-chosen validation reference reused) |
+| `DUPLICATE_PAYMENT` | inbound 11 (paid twice), outbound 3 (one in flight, or a payment reference reused) |
 | `INVALID_TRANSITION` | inbound 12 |
 | `UNSUPPORTED` | inbound 9 |
 | `RATE_LIMIT` | outbound 3 |
