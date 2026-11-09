@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | approved |
+| Status | done |
 | Milestone | M3 |
 | Depends on | F21, F22 |
 | Design references | NPCI.md · DECISIONS D34 · EXPLOIT-LAB.md |
@@ -35,4 +35,4 @@ duplicates, redelivery until Acked), plus forged and malformed messages on reque
 | `NpciSwitchTest` | unit | request verification, every script, redelivery stops on Ack, attack messages fail verification with the simulator's own verifier except where meant to |
 
 ## 5. Done when
-- [ ] Module builds in the lab image; tests pass
+- [x] Module builds in the lab image; tests pass (17)
