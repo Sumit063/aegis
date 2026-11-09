@@ -11,7 +11,27 @@ aegis:
       secrets:
         key-secret: [ "lab-aegis-key-secret-not-real-0002" ]
         webhook: [ "lab-aegis-webhook-secret-not-real-02" ]
+    # The shop's bill and UPI desk, through the lab's NPCI switch (keys: lab/keys.sh).
+    bbps:
+      adapter: bbps
+      application: desk
+      base-url: http://npci-switch:8093
+      secrets:
+        signing-key: [ "${AEGIS_NPCI_KEY}" ]
+        switch-certificate: [ "${NPCI_SWITCH_PUBLIC}" ]
+    upi:
+      adapter: upi
+      application: desk
+      base-url: http://npci-switch:8093
+      secrets:
+        signing-key: [ "${AEGIS_NPCI_KEY}" ]
+        switch-certificate: [ "${NPCI_SWITCH_PUBLIC}" ]
   applications:
+    desk:
+      api-key: lab-desk-api-key-for-aegis-not-real-0000001
+      signing-secret: lab-aegis-signing-secret-not-real-0001
+      forward-url: http://shop-aegis:8092/aegis/npci
+      return-url: http://shop-aegis:8092/aegis/return
     shop:
       api-key: lab-shop-api-key-for-aegis-not-real-000001
       signing-secret: lab-aegis-signing-secret-not-real-0001

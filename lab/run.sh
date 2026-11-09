@@ -14,7 +14,8 @@ compose+=(-f lab/compose.yaml)
 modes=(direct careful)
 grep -q '^  aegis:' lab/compose.yaml && modes+=(aegis)
 
-./mvnw -q -B -ntp -DskipTests package -pl lab/mock-gateway,lab/vulnshop,aegis-service -am
+lab/keys.sh >/dev/null
+./mvnw -q -B -ntp -DskipTests package -pl lab/mock-gateway,lab/vulnshop,lab/npci-switch,aegis-service -am
 "${compose[@]}" up -d --build --wait --quiet-pull >/dev/null
 [[ "${KEEP:-}" == 1 ]] || trap '"${compose[@]}" down -v >/dev/null 2>&1' EXIT
 

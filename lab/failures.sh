@@ -15,7 +15,8 @@ faults=(${FAULTS:-aegis kafka postgres})
 DOWN="${DOWN:-5}"          # seconds each component stays down
 SETTLE="${SETTLE:-180}"    # seconds allowed for every order to be fulfilled after the last fault
 
-./mvnw -q -B -ntp -DskipTests package -pl lab/mock-gateway,lab/vulnshop,aegis-service -am
+lab/keys.sh >/dev/null
+./mvnw -q -B -ntp -DskipTests package -pl lab/mock-gateway,lab/vulnshop,lab/npci-switch,aegis-service -am
 "${compose[@]}" up -d --build --wait --quiet-pull >/dev/null
 [[ "${KEEP:-}" == 1 ]] || trap '"${compose[@]}" down -v >/dev/null 2>&1' EXIT
 
