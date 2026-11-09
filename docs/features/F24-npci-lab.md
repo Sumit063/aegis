@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | approved |
+| Status | done |
 | Milestone | M3 |
 | Depends on | F23 |
 | Design references | NPCI.md §4 · EXPLOIT-LAB.md · F19 |
@@ -31,9 +31,11 @@ components under NPCI traffic loses or doubles nothing.
 | N10 | Status check after 10 s | 429, switch not called |
 | N11 | Genuine result for another amount | `AMOUNT_MISMATCH` |
 | N12 | FAILURE after SUCCESS | `DOWNGRADE` |
+| N13 | Bill reference fetched again | 409 `DUPLICATE`, switch not called |
+| N14 | Transaction ID reused for another bill | 409 `DUPLICATE_PAYMENT`, switch not called |
 | L1–L6 | BBPS success, deemed → success, failure; UPI success, deemed → reversal, failure | application sees exactly the real sequence |
 | Load | 300 bill and UPI payments concurrently | every one settled exactly once |
 
 ## 4. Done when
-- [ ] `lab/npci.sh` green locally and in CI; `lab/failures.sh` with NPCI traffic green
-- [ ] M3 marked done in README, HLD, features README; site roadmap
+- [x] `lab/npci.sh` green locally and in CI; `lab/failures.sh` with NPCI traffic green
+- [x] M3 marked done in README, features README; site roadmap

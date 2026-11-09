@@ -78,6 +78,8 @@ docker compose -f deploy/compose.yaml -f deploy/compose.local.yaml up -d postgre
 ./mvnw -pl aegis-service spring-boot:run                  # run the service (profile: local)
 scripts/check.sh [staging]                                # validate local, or what the server runs
 lab/run.sh                                                # Exploit Lab: every attack, results in lab/RESULTS.md
+lab/npci.sh                                               # NPCI lab: BBPS and UPI attacks, flows, load (lab/NPCI.md)
+lab/failures.sh                                           # Failure lab: SIGKILL each component under traffic
 java lab/bench/Bench.java 2000 32                         # pipeline benchmark (lab running: KEEP=1 lab/run.sh)
 ```
 
@@ -88,7 +90,7 @@ java lab/bench/Bench.java 2000 32                         # pipeline benchmark (
 | M0 | Exploit Lab — reproduce the CVE classes in Docker ([results](lab/RESULTS.md)): 10/10 exploited directly, 10/10 blocked through Aegis | done |
 | M1 | Core gateway with Razorpay ([acceptance](docs/features/F16-acceptance.md)) | done |
 | M2 | Stripe and Cashfree adapters; load and failure tests ([failure lab](lab/FAILURES.md), [benchmark](docs/engineering/BENCHMARK.md)) | done |
-| M3 | NPCI-style XML adapters (BBPS, UPI) against a simulator | planned |
+| M3 | NPCI-style XML adapters (BBPS, UPI) against a simulator ([contract](docs/design/NPCI.md), [NPCI lab](lab/NPCI.md)) | done |
 | M4 | Partner API protection and rate limits | planned |
 
 Aegis never handles raw card data and never moves money.
