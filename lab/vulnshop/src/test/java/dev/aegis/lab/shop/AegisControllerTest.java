@@ -54,6 +54,20 @@ class AegisControllerTest {
     }
 
     @Test
+    void aMessageDeliveredAgainIsAppliedOnce() {
+        Shop shop = shop();
+        AegisController controller = controller(shop);
+        String body = forwarded("CALLBACK", "SUCCESS");
+        String now = String.valueOf(Instant.now().getEpochSecond());
+
+        controller.message(body, now, sign(now, body));
+
+        assertThat(controller.message(body, now, sign(now, body)).getBody())
+                .isEqualTo("ignored: message already processed");
+        assertThat(shop.order("SHOP-1").orElseThrow().fulfilments()).isOne();
+    }
+
+    @Test
     void unsignedOrStaleMessagesAreRefused() {
         Shop shop = shop();
         String body = forwarded("CALLBACK", "SUCCESS");
