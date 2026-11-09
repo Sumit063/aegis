@@ -29,6 +29,13 @@
 #         client-id: ${CASHFREE_CLIENT_ID}
 #       secrets:
 #         client-secret: [ "${CASHFREE_CLIENT_SECRET}" ]   # also verifies webhooks
+#     bbps:                                       # /in/bbps, /gw/bbps/... (NPCI.md §2)
+#       adapter: bbps
+#       application: shop
+#       base-url: https://bbps-switch.example     # the switch (or the BBPS lab simulator)
+#       secrets:
+#         signing-key: [ "${BBPS_SIGNING_KEY}" ]  # Aegis's RSA key, PKCS#8 (PEM or base64)
+#         switch-certificate: [ "${BBPS_SWITCH_CERTIFICATE}", "${BBPS_SWITCH_CERTIFICATE_PREVIOUS:}" ]
 #   applications:
 #     shop:
 #       api-key: ${SHOP_AEGIS_API_KEY}            # the shop's key for /gw (32+ characters)

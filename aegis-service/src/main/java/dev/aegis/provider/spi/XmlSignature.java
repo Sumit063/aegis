@@ -69,7 +69,9 @@ public final class XmlSignature {
                     factory.newCanonicalizationMethod(CanonicalizationMethod.EXCLUSIVE, (C14NMethodParameterSpec) null),
                     factory.newSignatureMethod(SignatureMethod.RSA_SHA256, null),
                     List.of(reference));
-            factory.newXMLSignature(signedInfo, null).sign(new DOMSignContext(key, document.getDocumentElement()));
+            DOMSignContext context = new DOMSignContext(key, document.getDocumentElement());
+            context.setDefaultNamespacePrefix("ds");
+            factory.newXMLSignature(signedInfo, null).sign(context);
         } catch (GeneralSecurityException | MarshalException | XMLSignatureException e) {
             throw new IllegalStateException("XML signing failed", e);
         }
