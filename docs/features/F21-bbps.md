@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | approved |
+| Status | done |
 | Milestone | M3 |
 | Depends on | F20 |
 | Design references | NPCI.md §2 · LLD §6, §10 · DECISIONS D33, D34 · PAYMENT-FLOWS §8.2 |
@@ -20,6 +20,7 @@ request goes out once, asynchronous results and status checks are verified and h
 ## 3. Design
 | Concern | Rule |
 |---|---|
+| Package | `provider.npci` with UPI (F22): one network operator, shared signing and `Head` rules in `Npci` (providers never depend on each other; these two are one provider) |
 | Connection | secrets `signing-key` (Aegis's PKCS#8 key), `switch-certificate` (list); `base-url` required; paths `/bbps/BillFetchRequest`, `/bbps/BillPaymentRequest`, `/bbps/TxnStatusRequest` |
 | Facts | merchant ref = provider ref = `Head@refId`; payment ref = `Txn@txnReferenceId` (status: `TxnStatusReq@txnReferenceId`); amount `Amount/Amt` |
 | Requests | root must match the call (`BillFetchRequest` for a validation, …); unsigned; signed by Aegis in `prepare`; `refId` and `txnReferenceId` match `[A-Za-z0-9_-]{1,64}` |
@@ -36,4 +37,4 @@ request goes out once, asynchronous results and status checks are verified and h
 | `BbpsIT` | IT | LLD §10 row by row against `FakeProvider` (signed replies) and signed async responses: fetch, pay, retry refused, deemed → status too early (429) → SUCCESS, duplicate SUCCESS Acked not forwarded, forged response 401, late FAILURE `DOWNGRADE` |
 
 ## 5. Done when
-- [ ] Tests pass; `./mvnw verify` green; LLD row, example config
+- [x] Tests pass; `./mvnw verify` green; LLD row, example config

@@ -25,7 +25,7 @@ to it.
 | Validation | accepted on `SUCCESS` with the request's `Txn@id`; provider ref = `Txn@id`; amount = the request's (D34) |
 | Inbound | `RespPay` `PAY`: payment `Txn@id`, amount `Ref[@type=PAYEE]@settAmount`; `REVERSAL`: payment `Txn@orgTxnId`, fact `Txn@id`, its own amount |
 | Policy | freshness 1 h, no late success, limits 90 s / 3 in 2 h |
-| Amounts | decimal `value`/`settAmount` with `curr`, exact (`Money.ofMajor`, shared with Cashfree) |
+| Amounts | decimal `value`/`settAmount` with `curr`, exact (`Npci.majorUnits`: Cashfree's rules, refused never rounded) |
 
 ## 4. Tests
 | Test | Level | Covers |
