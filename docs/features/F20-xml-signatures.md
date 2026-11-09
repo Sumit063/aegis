@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | approved |
+| Status | done |
 | Milestone | M3 |
 | Depends on | F07 (SPI) |
 | Design references | NPCI.md §1 · LLD §6 · DECISIONS D33 · W3C XML Signature 1.1, Exclusive C14N |
@@ -39,8 +39,8 @@ and verify the switch's messages and replies, so that no adapter writes its own 
 |---|---|---|
 | `XmlTest` | unit | DOCTYPE/XXE/billion laughs refused before expansion; malformed; namespaces |
 | `XmlSignatureTest` | unit | round trip; rotated key; wrong key; tampered text and attribute; signature removed, duplicated, moved inside an element, wrapped (signed element moved, forged one in its place); `URI="#id"`; extra transform (XPath, XSLT); RSA-SHA1 / HMAC-SHA256 (key confusion); `KeyInfo` with an attacker key ignored; 1024-bit key refused |
-| `GatewayIT` (example adapter) | IT | a reply failing verification → `BAD_SIGNATURE`, validation FAILED |
+| `BbpsIT` (F21) | IT | a reply failing verification → `BAD_SIGNATURE`, validation FAILED |
 
 ## 5. Done when
-- [ ] Tests pass; `./mvnw verify` green
-- [ ] LLD, DECISIONS D33 updated
+- [x] Tests pass; `./mvnw verify` green (a mutation run without the profile check fails the ID-reference and extra-transform tests)
+- [x] LLD, DECISIONS D33 updated
