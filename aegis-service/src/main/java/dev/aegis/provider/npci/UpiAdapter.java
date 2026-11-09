@@ -129,12 +129,12 @@ public final class UpiAdapter implements ProviderAdapter {
         Element txn = Xml.one(root, "Txn");
         return switch (kind) {
             case VALIDATION -> {
-                Npci.id(txn, "id");
+                Ref validation = Npci.id(txn, "id");
                 Money amount = amount(Xml.one(Xml.one(root, "Payee"), "Amount"));
                 if (amount.isZero()) {
                     throw new UnparseableMessageException("a payment of zero cannot be validated");
                 }
-                yield new CallFacts(Npci.id(txn, "refId"), null, null, amount);
+                yield new CallFacts(Npci.id(txn, "refId"), validation, null, amount);
             }
             case PAY_REQUEST -> {
                 if (!"PAY".equals(Xml.attr(txn, "type"))) {

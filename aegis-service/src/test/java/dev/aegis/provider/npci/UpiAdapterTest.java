@@ -131,7 +131,7 @@ class UpiAdapterTest {
     @Test
     void readsWhatEachRequestSays() {
         assertThat(adapter.facts(CallKind.VALIDATION, unsigned(reqValAdd("V1", "ORDER-1", "499.00"))))
-                .isEqualTo(new CallFacts(Ref.of("ORDER-1"), null, null, Money.of(49_900, "INR")));
+                .isEqualTo(new CallFacts(Ref.of("ORDER-1"), Ref.of("V1"), null, Money.of(49_900, "INR")));
         assertThat(adapter.facts(CallKind.PAY_REQUEST, unsigned(reqPay("V1", "T1", "499.00"))))
                 .isEqualTo(new CallFacts(null, Ref.of("V1"), Ref.of("T1"), Money.of(49_900, "INR")));
         assertThat(adapter.facts(CallKind.STATUS_CHECK, unsigned(reqChkTxn("V1", "T1"))))
