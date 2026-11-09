@@ -15,7 +15,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * Base of every integration test: the whole service against real PostgreSQL and Kafka, with
- * Razorpay, Stripe, Cashfree, BBPS and example connections for a shop (all pointing at {@link FakeProvider}), a second
+ * Razorpay, Stripe, Cashfree, BBPS, UPI and example connections for a shop (all pointing at {@link FakeProvider}), a second
  * application, and a clock tests can move. The containers start once per test run and the Spring context is
  * shared, so each IT adds seconds, not minutes.
  */
@@ -86,7 +86,7 @@ public abstract class IntegrationTest {
         registry.add(
                 "aegis.connections.example.base-url", () -> FakeProvider.url().toString());
         // NPCI-style connections: keys generated per run, trusted switch key and Aegis's signing key.
-        for (String npci : List.of("bbps")) {
+        for (String npci : List.of("bbps", "upi")) {
             String prefix = "aegis.connections." + npci;
             registry.add(prefix + ".adapter", () -> npci);
             registry.add(prefix + ".application", () -> "shop");
