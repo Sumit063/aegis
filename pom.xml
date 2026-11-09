@@ -22,6 +22,7 @@
     <module>aegis-service</module>
     <module>lab/mock-gateway</module>
     <module>lab/vulnshop</module>
+    <module>lab/npci-switch</module>
   </modules>
 
   <properties>
