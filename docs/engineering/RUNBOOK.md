@@ -85,6 +85,13 @@ c exec kafka bash -c '/opt/kafka/bin/kafka-console-consumer.sh --bootstrap-serve
 
 Replaying is safe: a record already processed is recognised as a repeat.
 
+**Public ingress (staging):** `aegis-staging.sqyra.com` reaches Aegis through the Cloudflare tunnel
+of the site stack, for paths matching `^/in/` only (D32). The tunnel container joins this stack's
+network; after it is recreated, run `docker network connect aegis-staging_default sqyra-site-tunnel-1`.
+Check: `curl -X POST https://aegis-staging.sqyra.com/in/razorpay` → 401, `/admin/blocked` → 404.
+Staging's Razorpay connection uses test-mode keys; the `shop` application is paused (no shop runs
+there), so passed messages wait in the queue.
+
 **Adding a connection or application:** put its secrets in `.env` (mode 600) and the entry in
 `aegis.yaml` (`deploy/aegis.example.yaml` shows each provider), then `c up -d aegis`. Every `.env`
 value is passed into the container, so the `${...}` placeholders resolve; a missing one stops

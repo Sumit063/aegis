@@ -302,6 +302,17 @@ Post-hardening review (HARDENING §13), each finding verified against the code f
 - **Rejected:** defaulting `order_currency` to INR (Cashfree's own default) and letting Cashfree
   generate the `order_id` (the application's reference must be its own).
 
+### D32 — Public ingress publishes only what providers call
+- **Only `/in/` is reachable from the internet.** Providers send webhooks and the customer's browser
+  posts callbacks there; both are verified before anything is stored as genuine. `/gw` (applications),
+  `/admin` (operators) and the management port stay on the host or private network.
+- **A tunnel, not an open port.** Staging is published by a Cloudflare tunnel (outbound connection,
+  no inbound port on the host) whose hostname rule is anchored (`^/in/`): an unanchored `in/.*` also
+  matched `/admin/`. Production uses the same rule at its reverse proxy, which also terminates TLS
+  and, where required, mTLS (HARDENING §12).
+- **Rejected:** publishing the whole application port and relying on `/admin` and `/gw` keys alone;
+  keys stay required, but what is not published cannot be attacked.
+
 ## Design review log
 
 | # | Issue | Fix |

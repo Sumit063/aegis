@@ -51,5 +51,8 @@ placed is still fulfilled exactly once at the shop: nothing acknowledged lost, n
 ## 6. Remaining
 - One kill per component per run; timings vary between runs (what was in flight differs), which is
   the point, but a single green run is not a proof for every interleaving.
+- A CI run fulfilled 4 of 544 orders twice: deliveries cut by a kill were resent with the same `id`
+  (as designed), and the lab shop deduped webhooks by event ID but not callbacks. The shop now
+  ignores an Aegis `id` it already processed, as LLD §8 requires of every application.
 - HARDENING §12 item 20 (forwarder crash mid-delivery) is now exercised by the Aegis kill, not by a
   test that stops exactly between send and record.
