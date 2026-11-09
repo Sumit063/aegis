@@ -63,4 +63,16 @@ From an external review of correctness, abuse resistance and recovery; each is o
 | F19 | Failure lab: kill and restart Aegis, Kafka and PostgreSQL under load; every payment delivered | done |
 
 M2 is done: both adapters pass the shared contract and end-to-end tests, the Failure lab runs in CI,
-and the benchmark was re-run (BENCHMARK). M3–M4 features are added here when they are designed.
+and the benchmark was re-run (BENCHMARK). M4 features are added here when they are designed.
+
+## M3 — NPCI-style XML providers (BBPS, UPI)
+
+Contract: [NPCI.md](../design/NPCI.md) · decisions D33, D34.
+
+| ID | Feature | Status |
+|---|---|---|
+| F20 | XML signatures (one whole-document profile) and secure XML parsing in the SPI; untrusted replies are `BAD_SIGNATURE` | done |
+| F21 | BBPS adapter at the COU: bill fetch, payment, async response, status checks | approved |
+| F22 | UPI adapter at the payer PSP: `ReqValAdd`, `ReqPay`, `RespPay` (deemed, reversal), `ReqChkTxn` | approved |
+| F23 | NPCI switch simulator (lab): independent signing, scripted outcomes, redelivery, attack messages | approved |
+| F24 | NPCI lab: 12 attacks, legitimate traffic, load, failures under NPCI traffic, CI job | approved |

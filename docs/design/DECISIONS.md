@@ -313,6 +313,45 @@ Post-hardening review (HARDENING §13), each finding verified against the code f
 - **Rejected:** publishing the whole application port and relying on `/admin` and `/gw` keys alone;
   keys stay required, but what is not published cannot be attacked.
 
+### D33 — One XML signature profile, verified against configured keys only
+- **Profile:** an enveloped `ds:Signature`, the last child of the root, with exactly one
+  `Reference URI=""` (the whole document), transforms exactly enveloped-signature then exclusive
+  C14N, digest SHA-256, signature RSA-SHA256 with a key of at least 2048 bits. Anything else, a
+  second `Signature` anywhere included, is refused before any cryptography runs.
+- **Why whole-document:** signature-wrapping attacks need a reference to *part* of a document, so
+  that the verified element and the element read differ. With `URI=""` there is nothing else to read.
+- **Keys from configuration only.** `KeyInfo` in a message is ignored: a message cannot choose the
+  key that verifies it. Switch certificates (or public keys) are a list, current and previous, for
+  rotation; there is no PKI path validation (NPCI.md §5).
+- **Parsing:** DOCTYPE refused, no external entities or XInclude, JDK secure processing and
+  `org.jcp.xml.dsig.secureValidation` on. Bodies are already capped at 64 KB.
+- **Requests are signed by Aegis**, with the connection's `signing-key` (PKCS#8). The application
+  holds no NPCI key and sends unsigned XML; a request that already carries a signature is refused.
+- **A provider reply that fails verification is `BAD_SIGNATURE`**, like an inbound message, not
+  `UNPARSEABLE`: SPI `UntrustedReplyException`. A refused validation reply is stored as FAILED.
+- **Rejected:** XML-DSig with ID references (wrapping risk), trusting `KeyInfo` certificates
+  (anyone can embed one), and a third-party XML security library (the JDK's is the reference
+  implementation; one fewer dependency).
+
+### D34 — NPCI-style contract, a simulator, and the UPI amount authority
+- **Contract:** NPCI's BBPS and UPI specifications are for members only, so Aegis implements an
+  NPCI-*style* contract (NPCI.md) that keeps what matters for security: XML, signatures on every
+  message, `Ack`, asynchronous results, deemed transactions, reversals and status-check limits. The
+  lab's switch simulator implements the same contract independently (its own signing code), so the
+  two check each other.
+- **UPI amount:** a payer PSP has no authority that fixes the amount; the payer's instruction does.
+  The validation (`ReqValAdd`) records the amount the application states, and every later message
+  (payment request, result, status) must match it. This still stops a result for another amount, a
+  second payment while one is in flight and a downgrade; it cannot stop an application that states
+  the wrong amount itself, which no gateway could.
+- **Synchronous validation and status answers** in the contract (NPCI answers them
+  asynchronously). Recorded as a limit, not hidden (HARDENING §12).
+- **No late success after failure** for either: a FAILED result is final; money comes back by
+  reversal (UPI) or the deemed transaction resolving (BBPS).
+- **Rejected:** a UPI validation without an amount (the amount check would have nothing to compare
+  with), and making Aegis call the switch to resolve deemed transactions (D2: only the application
+  asks).
+
 ## Design review log
 
 | # | Issue | Fix |

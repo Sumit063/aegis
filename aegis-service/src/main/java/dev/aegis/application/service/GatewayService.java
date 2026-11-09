@@ -30,6 +30,7 @@ import dev.aegis.provider.spi.ProviderRegistry;
 import dev.aegis.provider.spi.RawMessage;
 import dev.aegis.provider.spi.Reply;
 import dev.aegis.provider.spi.UnparseableMessageException;
+import dev.aegis.provider.spi.UntrustedReplyException;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
@@ -128,6 +129,9 @@ public class GatewayService implements GatewayUseCase {
         try {
             reply = (Reply.Validated) adapter.reply(
                     CallKind.VALIDATION, request, response.status(), raw(response), connection, answeredAt);
+        } catch (UntrustedReplyException e) {
+            reply = new Reply.Validated(false, null, null);
+            verdict = Verdict.blocked(BlockReason.BAD_SIGNATURE);
         } catch (UnparseableMessageException e) {
             reply = new Reply.Validated(false, null, null);
             verdict = Verdict.blocked(BlockReason.UNPARSEABLE);
@@ -235,6 +239,13 @@ public class GatewayService implements GatewayUseCase {
             answer = ((Reply.Payment) adapter.reply(
                             CallKind.STATUS_CHECK, request, response.status(), raw(response), connection, answeredAt))
                     .message();
+        } catch (UntrustedReplyException e) {
+            return new Answer(
+                    true,
+                    response.status(),
+                    response.contentType(),
+                    response.body(),
+                    Verdict.blocked(BlockReason.BAD_SIGNATURE));
         } catch (UnparseableMessageException e) {
             return new Answer(
                     true,

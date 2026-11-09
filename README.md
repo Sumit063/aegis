@@ -54,6 +54,7 @@ provider.
 - [High-level design](docs/design/HLD.md) — role, problems, checks, zero trust, guarantees, failures
 - [Low-level design](docs/design/LLD.md) — endpoints, pipelines, adapter interface, schema, forwarding, tests
 - [Decisions](docs/design/DECISIONS.md) — every choice and why
+- [NPCI-style messages](docs/design/NPCI.md) — the BBPS and UPI contract, signatures, simplifications
 - [Exploit Lab](docs/design/EXPLOIT-LAB.md) — reproducible attacks that prove the protection ([lab/](lab/README.md))
 
 ## Engineering
