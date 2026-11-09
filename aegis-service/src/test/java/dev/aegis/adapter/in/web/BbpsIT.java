@@ -28,6 +28,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -51,6 +52,11 @@ class BbpsIT extends IntegrationTest {
     TestClock clock;
 
     private final HttpClient http = HttpClient.newHttpClient();
+
+    @AfterEach
+    void realTime() {
+        clock.reset();
+    }
 
     private HttpResponse<String> gateway(String path, String xml) throws Exception {
         return http.send(
