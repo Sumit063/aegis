@@ -253,4 +253,41 @@ class BbpsIT extends IntegrationTest {
                 .isEqualTo(400);
         assertThat(FakeProvider.received("/bbps/")).hasSize(before);
     }
+
+    /** The application chooses BBPS references: a reused bill reference is refused before the switch is called. */
+    @Test
+    void aBillReferenceCanBeFetchedOnlyOnce() throws Exception {
+        String bill = bill();
+        int fetches = FakeProvider.received("/bbps/BillFetchRequest").size();
+
+        HttpResponse<String> again = gateway("validations", billFetchRequest(bill));
+
+        assertThat(again.statusCode()).isEqualTo(409);
+        assertThat(again.headers().firstValue("X-Aegis-Verdict")).contains("BLOCKED DUPLICATE");
+        assertThat(FakeProvider.received("/bbps/BillFetchRequest")).hasSize(fetches);
+    }
+
+    /** A transaction ID names one payment: reusing it for another bill is refused, not filed under the old one. */
+    @Test
+    void aTransactionIdCanBeUsedOnlyOnce() throws Exception {
+        String txn = unique("T");
+        FakeProvider.on(
+                "POST /bbps/BillPaymentRequest",
+                r -> new Answer(200, "<bbps:Ack xmlns:bbps=\"http://bbps.org/schema\"/>"));
+        String first = bill();
+        gateway("payments", billPaymentRequest(first, txn, 84_000));
+        deliver(result(first, txn, "Successful", "000", 84_000));
+        await().atMost(Duration.ofSeconds(15)).until(() -> delivered(txn).size() == 1);
+        String second = bill();
+        int sent = FakeProvider.received("/bbps/BillPaymentRequest").size();
+
+        HttpResponse<String> reused = gateway("payments", billPaymentRequest(second, txn, 84_000));
+
+        assertThat(reused.statusCode()).isEqualTo(409);
+        assertThat(reused.headers().firstValue("X-Aegis-Verdict")).contains("BLOCKED DUPLICATE_PAYMENT");
+        assertThat(FakeProvider.received("/bbps/BillPaymentRequest")).hasSize(sent);
+        assertThat(jdbc.queryForObject(
+                        "select jsonb_array_length(messages) from payments where payment_ref = ?", Integer.class, txn))
+                .isEqualTo(2);
+    }
 }
