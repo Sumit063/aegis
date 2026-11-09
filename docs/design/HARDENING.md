@@ -130,7 +130,13 @@ It found and fixed a Forwarder pacing limit (end-to-end p99 in a burst 19.3 s â†
 | Forwarder crash mid-delivery (item 20) | exercised by the Failure lab (F19: Aegis killed with SIGKILL under traffic, every order fulfilled exactly once), not by a test that stops exactly between send and record | a deterministic hook only if a regression appears |
 | Multi-instance limits | per-instance by design (D26); with several Forwarder instances a payment whose next message becomes due mid-pass can be claimed by a second instance, so that message may be delivered twice (same `id`, first deliveries still in order) | a shared limiter only if real traffic needs it; keep the lease across a pass if duplicate deliveries become noisy |
 | mTLS to merchants | configured at the TLS proxy, not in Aegis | document a reference proxy config with the first production host |
-| Real Razorpay test-mode run | needs a public URL (tunnel) and the dashboard webhook | run when staging gets a public ingress |
+
+**Real Razorpay test-mode run (done, 2026-11-09).** Staging receives Razorpay test-mode webhooks
+through a Cloudflare tunnel that publishes only `/in/`. An order created through
+`/gw/razorpay/validations` and paid in Razorpay Checkout produced `payment.authorized` (PENDING,
+passed), `payment.captured` (SUCCESS, passed, validation PAID) and `order.paid` (same fact, blocked
+as a duplicate, not forwarded). A probe without a signature was blocked as `BAD_SIGNATURE`. The
+restore rehearsal on that data restored both payments and opened all 8 sealed values.
 
 ## 13. Post-hardening review (H6)
 
