@@ -6,7 +6,7 @@ unacknowledged webhooks; Aegis delivers at least once; the shop fulfils an order
 
 | Step | |
 |---|---|
-| aegis | killed after 95 orders, down 5s, restarted |
-| kafka | killed after 252 orders, down 5s, restarted |
+| aegis | killed after 96 orders, down 5s, restarted |
+| kafka | killed after 251 orders, down 5s, restarted |
 | postgres | killed after 422 orders, down 5s, restarted |
-| Result | **593/593** orders fulfilled exactly once, 0 missing, 0 more than once (settled within 30s) |
+| Result | **592/592** orders fulfilled exactly once, 0 missing, 0 more than once (settled within 30s) |
