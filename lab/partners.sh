@@ -165,18 +165,20 @@ result P9 "path traversal (dot segments, encoded slashes)" "$a1; $a2; the shop n
   "$([[ "$a1" =~ ^(400|403|404) && "$a2" =~ ^(400|403|404) ]] && echo 1 || echo 0)"
 
 # The flood partner: burst 10, 60 a minute; requests alternate between the two instances.
-allowed=0; limited=0
+allowed=0; limited=0; flood_start="$(perl -MTime::HiRes=time -e 'printf "%.3f", time')"
 for i in $(seq 1 30); do
   base="$AEGIS"; ((i % 2)) && base="$AEGIS_2"
-  answer="$(partner "$base" flood "$FLOOD" POST /recharges "$(id F)" "$(body)")"
+  answer="$(RETRY_AFTER=1 partner "$base" flood "$FLOOD" POST /recharges "$(id F)" "$(body)")"
   [[ "$answer" == 201 ]] && allowed=$((allowed + 1))
-  [[ "$answer" == "429 RATE_LIMIT" ]] && limited=$((limited + 1))
+  [[ "$answer" == "429 RATE_LIMIT Retry-After" ]] && limited=$((limited + 1))
 done
-next="$(RETRY_AFTER=1 partner "$AEGIS" flood "$FLOOD" POST /recharges "$(id F)" "$(body)")"
-result P10 "flood: 30 requests, rate 60/min, burst 10" "$allowed allowed, $limited refused; next: $next" \
-  "$([[ "$allowed" -le 11 && "$limited" -ge 19 && "$next" == "429 RATE_LIMIT Retry-After" ]] && echo 1 || echo 0)"
-result P11 "the rate holds across two instances (shared Redis)" "$allowed allowed in total, not $((2 * 10))" \
-  "$([[ "$allowed" -le 11 ]] && echo 1 || echo 0)"
+# One more is earned per second (60/min): the bound counts the seconds the flood took.
+elapsed="$(perl -MTime::HiRes=time -e "printf '%d', time - $flood_start")"
+bound=$((10 + elapsed + 1))
+result P10 "flood: 30 requests, rate 60/min, burst 10" "$allowed allowed in ${elapsed} s (bound $bound), $limited refused 429 with Retry-After" \
+  "$([[ "$allowed" -le "$bound" && $((allowed + limited)) == 30 ]] && echo 1 || echo 0)"
+result P11 "the rate holds across two instances (shared Redis)" "$allowed allowed in total; two separate allowances would allow $((2 * 10 + 2 * elapsed))" \
+  "$([[ "$allowed" -le "$bound" && "$allowed" -lt 20 ]] && echo 1 || echo 0)"
 answer="$(acme POST /recharges "$(id R)" "$(body)")"
 result P12 "another partner during the flood" "$answer" "$([[ "$answer" == 201 ]] && echo 1 || echo 0)"
 
