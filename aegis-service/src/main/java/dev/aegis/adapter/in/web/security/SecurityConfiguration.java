@@ -6,7 +6,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
  * Private APIs: {@code /gw/**} for authenticated applications, {@code /admin/**} for operators.
- * {@code /in/**} is public; every message there is verified on its own.
+ * {@code /in/**} and {@code /partner/**} are public; every message and partner request there is
+ * verified on its own.
  */
 @Configuration(proxyBeanMethods = false)
 class SecurityConfiguration implements WebMvcConfigurer {

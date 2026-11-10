@@ -16,7 +16,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 /**
  * Base of every integration test: the whole service against real PostgreSQL and Kafka, with
  * Razorpay, Stripe, Cashfree, BBPS, UPI and example connections for a shop (all pointing at {@link FakeProvider}), a second
- * application, and a clock tests can move. The containers start once per test run and the Spring context is
+ * application, partners {@code acme} and {@code tiny} of the shop, and a clock tests can move. The containers start once per test run and the Spring context is
  * shared, so each IT adds seconds, not minutes.
  */
 @SpringBootTest(
@@ -45,7 +45,22 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
             "aegis.connections.example.secrets.api-key[0]=" + IntegrationTest.EXAMPLE_API_KEY,
             "aegis.applications.other.api-key=" + IntegrationTest.OTHER_API_KEY,
             "aegis.applications.other.signing-secret=" + IntegrationTest.OTHER_API_KEY,
-            "aegis.applications.other.forward-url=http://127.0.0.1:1/other"
+            "aegis.applications.other.forward-url=http://127.0.0.1:1/other",
+            "aegis.partners.acme.application=shop",
+            "aegis.partners.acme.secrets[0]=" + IntegrationTest.ACME_SECRET,
+            "aegis.partners.acme.secrets[1]=" + IntegrationTest.ACME_PREVIOUS_SECRET,
+            "aegis.partners.acme.requests-per-minute=6000",
+            "aegis.partners.acme.burst=500",
+            "aegis.partners.acme.operations.recharges.methods=POST",
+            "aegis.partners.acme.operations.status.methods=GET",
+            "aegis.partners.tiny.application=shop",
+            "aegis.partners.tiny.secrets[0]=" + IntegrationTest.TINY_SECRET,
+            "aegis.partners.tiny.requests-per-minute=6000",
+            "aegis.partners.tiny.burst=500",
+            "aegis.partners.tiny.operations.recharges.methods=POST",
+            "aegis.partners.tiny.operations.recharges.requests-per-minute=60",
+            "aegis.partners.tiny.operations.recharges.burst=3",
+            "aegis.partners.tiny.operations.status.methods=GET"
         })
 @Import(IntegrationTest.Clocks.class)
 public abstract class IntegrationTest {
@@ -62,6 +77,9 @@ public abstract class IntegrationTest {
     public static final String EXAMPLE_WEBHOOK_SECRET = "example-webhook-secret-it-0001";
     public static final String EXAMPLE_API_KEY = "example-api-key-it-000000001";
     public static final String OTHER_API_KEY = "other-application-api-key-it-00000001";
+    public static final String ACME_SECRET = "acme-partner-signing-secret-it-000000001";
+    public static final String ACME_PREVIOUS_SECRET = "acme-partner-previous-secret-it-0000001";
+    public static final String TINY_SECRET = "tiny-partner-signing-secret-it-000000001";
     /** The {@code local} profile's admin key. */
     public static final String ADMIN_KEY = "local-only-admin-key-000000000000";
 
@@ -97,6 +115,9 @@ public abstract class IntegrationTest {
         registry.add(
                 "aegis.applications.shop.forward-url",
                 () -> FakeApplication.url().toString());
+        registry.add(
+                "aegis.applications.shop.partner-url",
+                () -> FakeApplication.partnerUrl().toString());
     }
 
     @TestConfiguration(proxyBeanMethods = false)

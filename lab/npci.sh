@@ -122,7 +122,8 @@ result N11 "genuine result for one paisa" "$(verdicts "$txn"), desk told $(told 
 
 plan SUCCESS_THEN_FAILURE >/dev/null
 ref="$(bbps_bill)"; txn="$(id T)"; bbps_pay "$ref" "$txn" >/dev/null
-ok=0; await_verdict "$txn" DOWNGRADE && [[ "$(told "$txn")" == '["SUCCESS"]' ]] && ok=1
+# The SUCCESS is forwarded asynchronously: wait for it, then make sure nothing else followed.
+ok=0; await_verdict "$txn" DOWNGRADE && await_told "$txn" '["SUCCESS"]' && [[ "$(told "$txn")" == '["SUCCESS"]' ]] && ok=1
 result N12 "FAILURE after SUCCESS" "$(verdicts "$txn"), desk told $(told "$txn")" "$ok"
 
 before="$(received BillFetchRequest)"

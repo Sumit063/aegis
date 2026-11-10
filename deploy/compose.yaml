@@ -92,7 +92,7 @@ services:
       AEGIS_DB_USER: aegis
       AEGIS_DB_PASSWORD: ${POSTGRES_PASSWORD:-aegis-local-only}
       AEGIS_KAFKA_BOOTSTRAP: kafka:29092
-      AEGIS_ROLES: ${AEGIS_ROLES:-ingress,checker,gateway,forwarder,admin}
+      AEGIS_ROLES: ${AEGIS_ROLES:-ingress,checker,gateway,forwarder,admin,partner}
       AEGIS_EVIDENCE_KEY: ${AEGIS_EVIDENCE_KEY:?AEGIS_EVIDENCE_KEY must be set in .env}
       AEGIS_ADMIN_API_KEY: ${AEGIS_ADMIN_API_KEY:?AEGIS_ADMIN_API_KEY must be set in .env}
     volumes:

@@ -47,6 +47,7 @@ aegis-service/src/main/java/dev/aegis/
     message/                     PaymentMessage, MessageType, Outcome, Verdict, BlockReason
     payment/                     Validation, Payment (one row each, with its message entries)
     check/                       Check rules, Checks, Gate (the single decision point)
+    partner/                     PartnerRequest, Refusal, Stored, PartnerGate (M4)
   application/
     port/in/                     *UseCase interfaces + their command/result records
     port/out/                    *Repository (storage) and *Port (Kafka, HTTP, crypto, clock)
@@ -55,7 +56,7 @@ aegis-service/src/main/java/dev/aegis/
     spi/                         ProviderAdapter, RawMessage, ParsedMessage, SecretSet, registry
     razorpay/                    M1; stripe/, cashfree/ (M2); later bbps/, upi/, one package each
   adapter/
-    in/web/controller/           *Controller: ingress /in, Gateway API /gw, Admin /admin
+    in/web/controller/           *Controller: ingress /in, Gateway API /gw, Partner API /partner, Admin /admin
     in/web/dto/                  request/response records (the HTTP contract)
     in/web/error/                exception → RFC 9457 problem response, in one place
     in/web/security/             application key and client-certificate authentication
@@ -65,7 +66,8 @@ aegis-service/src/main/java/dev/aegis/
     out/persistence/entity/      *Entity: JPA table mappings
     out/persistence/repository/  Spring Data repositories (locking and ON CONFLICT queries)
     out/kafka/                   ingress log publisher
-    out/http/                    provider client, forward client
+    out/http/                    provider client, forward client, partner client
+    out/limits/                  partner rates (GCRA): in memory
     out/crypto/                  AES-GCM evidence cipher, Aegis signer, JWE
   config/                        typed properties, connections, applications, fail-closed validation
 
@@ -120,6 +122,8 @@ A request through the layers:
 | **Competing Consumers** | Kafka partitions; Forwarder claims rows with `FOR UPDATE SKIP LOCKED` | Scale by adding instances |
 | **Retry with backoff + jitter, Circuit Breaker** | Forwarding to the application | Survive a slow or failing application |
 | **Decorator** | Metrics/tracing around ports | Cross-cutting concerns outside business code |
+| **Strategy** (rate store) | `RateLimiterPort`: `LocalRateLimiter`, chosen by `aegis.partner.limiter` | Where allowances live is configuration |
+| **Idempotency Key** | `partner_requests` primary key; `PartnerGate.repeat` | A partner's retry never executes twice |
 
 Deliberately **not** used: business state machines, outbox/event sourcing, reactive stacks,
 Lombok, deep inheritance.

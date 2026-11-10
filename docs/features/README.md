@@ -63,7 +63,7 @@ From an external review of correctness, abuse resistance and recovery; each is o
 | F19 | Failure lab: kill and restart Aegis, Kafka and PostgreSQL under load; every payment delivered | done |
 
 M2 is done: both adapters pass the shared contract and end-to-end tests, the Failure lab runs in CI,
-and the benchmark was re-run (BENCHMARK). M4 features are added here when they are designed.
+and the benchmark was re-run (BENCHMARK).
 
 ## M3 — NPCI-style XML providers (BBPS, UPI)
 
@@ -79,3 +79,12 @@ Contract: [NPCI.md](../design/NPCI.md) · decisions D33, D34.
 
 M3 is done: both adapters pass the shared contract and end-to-end tests, the NPCI lab and the
 failure lab with bill payments run in CI, and the review findings are fixed (HARDENING §15).
+
+## M4 — partner API protection and rate limits
+
+Design: HLD §3.2 · LLD §14 · decision D35.
+
+| ID | Feature | Status |
+|---|---|---|
+| F25 | Partner API: signed requests, freshness, scopes, rates, one execution per request ID, proxy, Admin lookup | done |
+
