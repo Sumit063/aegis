@@ -37,3 +37,23 @@ aegis:
       signing-secret: lab-aegis-signing-secret-not-real-0001
       forward-url: http://shop-aegis:8092/aegis/messages
       return-url: http://shop-aegis:8092/aegis/return
+      partner-url: http://shop-aegis:8092/partner-api
+  # Partners of the shop's recharge API (lab/partners.sh). acme is a normal partner; flood has a
+  # small rate so its limits show in seconds.
+  partners:
+    acme:
+      application: shop
+      secrets: [ "lab-acme-partner-secret-not-real-000000001", "lab-acme-previous-secret-not-real-00000001" ]
+      # High enough for the benchmark (lab/bench/PartnerBench.java) to measure Aegis, not the rate.
+      requests-per-minute: 600000
+      burst: 20000
+      operations:
+        recharges: { methods: [ POST ] }
+        status: { methods: [ GET ] }
+    flood:
+      application: shop
+      secrets: [ "lab-flood-partner-secret-not-real-00000001" ]
+      requests-per-minute: 60
+      burst: 10
+      operations:
+        recharges: { methods: [ POST ] }

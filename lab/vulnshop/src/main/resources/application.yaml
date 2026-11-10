@@ -26,3 +26,9 @@ shop:
   aegis-secret: lab-aegis-signing-secret-not-real-0001
   memory: 7d
   flaws: []
+
+# The partner recharge API (M4 lab): direct with a static key, or behind Aegis.
+partner-api:
+  mode: direct
+  api-key: lab-partner-api-key-not-real-0000000001
+  aegis-secret: lab-aegis-signing-secret-not-real-0001

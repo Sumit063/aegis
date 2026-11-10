@@ -8,7 +8,7 @@ Reproducible attacks against a realistic merchant integration, run once **direct
 | [`mock-gateway`](mock-gateway) | Razorpay-compatible provider: orders, payments, signed webhooks and Checkout results | 8090 |
 | [`vulnshop`](vulnshop) | Reference merchant; each integration flaw F1–F10 is a switch (`shop.flaws`) | 8091 (direct), 8092 (behind Aegis) |
 | [`npci-switch`](npci-switch) | NPCI-style BBPS and UPI switch ([NPCI.md](../docs/design/NPCI.md)): verifies Aegis's signed requests, delivers signed results, emits attack messages | 8093 |
-| Aegis + PostgreSQL + Kafka | the system under test, configured by [`aegis.yaml`](aegis.yaml) | 8080 / 8081 |
+| Aegis + PostgreSQL + Kafka + Redis | the system under test, configured by [`aegis.yaml`](aegis.yaml); a second instance (`aegis-2`) serves partners only | 8080 / 8081, 8082 |
 
 ```bash
 lab/run.sh            # build, start, run every attack, write lab/RESULTS.md (needs Docker, jq, openssl)
@@ -62,6 +62,25 @@ NPCI keys (the switch's and Aegis's RSA key pairs) are generated once per checko
 | `PUT /test/next` | what the next payment does: `SUCCESS`, `FAILURE`, `DEEMED_THEN_SUCCESS`, `DEEMED_THEN_FAILURE`, `DEEMED_THEN_REVERSAL`, `SUCCESS_THEN_FAILURE`, `SILENT`; `duplicates`; `wrongAmount` |
 | `POST /test/attack?kind=…&txn=…` | delivers one attack message about a transaction: `forged`, `tampered`, `wrapped`, `unsigned`, `xxe`, `stale`, `sha1`, `hmac`, `keyinfo`, `replay` |
 | `GET /test/received`, `GET /test/txn/{id}` | what the switch saw (proves refused requests never reached it) |
+
+## Partner lab (M4)
+
+```bash
+lab/partners.sh                   # partners → recharge API, directly and through Aegis; writes lab/PARTNERS.md
+KEEP=1 lab/partners.sh            # same, and leave the lab running
+java lab/bench/PartnerBench.java 3000 32 [copies]   # throughput and latency (lab running)
+```
+
+The shop offers a recharge API to partners (`/partner-api/recharges`, `/partner-api/status/{id}`).
+Direct (`shop-direct`), it trusts a static API key and the body, like many partner APIs: a replayed
+request, an amount changed in transit and a retry storm all execute (D1–D3). Behind Aegis
+(`shop-aegis`) it runs only what Aegis signed, and partners call Aegis's `/partner/…` on either of
+two instances sharing PostgreSQL and Redis: every attack (forged, altered, stale, another partner's
+secret, retry storms, reused IDs, operations and methods not granted, path traversal, floods) is
+stopped before the shop, rates hold across both instances, Redis and shop failures never cause a
+second execution, and 500 recharges sent twice at once each run exactly once. `GET
+/lab/partner-executions` on either shop shows how often each request ran. Latest results:
+[PARTNERS.md](PARTNERS.md).
 
 Everything here uses fake, lab-only secrets and runs on a private Docker network. Nothing in the
 lab talks to a real gateway or switch.
