@@ -312,6 +312,8 @@ Post-hardening review (HARDENING §13), each finding verified against the code f
   and, where required, mTLS (HARDENING §12).
 - **Rejected:** publishing the whole application port and relying on `/admin` and `/gw` keys alone;
   keys stay required, but what is not published cannot be attacked.
+- **M4:** where partners are served, `/partner/` is published as well (anchored, `^/partner/`); every
+  request there is authenticated before anything is stored (D35).
 
 ### D33 — One XML signature profile, verified against configured keys only
 - **Profile:** an enveloped `ds:Signature`, the last child of the root, with exactly one
@@ -351,6 +353,41 @@ Post-hardening review (HARDENING §13), each finding verified against the code f
 - **Rejected:** a UPI validation without an amount (the amount check would have nothing to compare
   with), and making Aegis call the switch to resolve deemed transactions (D2: only the application
   asks).
+
+### D35 — Partner API: Aegis authenticates, limits and executes each request ID once
+- **Who:** a partner is an external system that calls an application's own payment API (a
+  reseller, agent network or aggregator submitting recharges, bill payments or payouts). The
+  application's partner API sits behind Aegis at `/partner/**` (role `PARTNER`); Aegis forwards to
+  the application's `partner-url`. Same zero-trust stance as for providers: the partner's network,
+  host and headers prove nothing, only its signature does.
+- **Signature:** `X-Signature: v1=hex(HMAC-SHA256(secret, "v1\n" METHOD "\n" path?query "\n"
+  timestamp "\n" request-id "\n" hex(SHA-256(body))))`, with `X-Partner-Id`, `X-Request-Id`,
+  `X-Timestamp`. Everything that decides what the request does is signed, so nothing can be moved
+  to another operation, time or ID. Secrets are lists (rotation), 32+ characters, per partner.
+  Optional client-certificate subject, like applications.
+- **Freshness:** ±5 minutes (`aegis.partner.freshness`) around Aegis's clock, both ways; the window
+  bounds how long a request ID must be remembered (retention 30 days, far above it).
+- **Scopes:** each partner is granted operations (the first path segment) and methods; anything
+  else, and any path that is not plain segments (dot segments, percent-encoding), is 403 before the
+  application sees it. The path forwarded is the path signed.
+- **One execution per request ID (idempotency key).** The ID is claimed by `INSERT … ON CONFLICT DO
+  NOTHING` on `(partner, request_id)` before the application is called, so two instances cannot both
+  run it. A repeat gets the stored answer (`X-Aegis-Replayed: true`), whatever its status: an error
+  answer is an answer. A different request under a used ID is 422. While the first runs, 409. If the
+  application was never reached, the ID is released (503, retry is safe); if it was reached and did
+  not answer, the outcome is unknown for good (504, the partner asks the status with a new ID).
+  Aegis never guesses that a request did not run.
+- **Rates** per partner and per operation (`RateLimiterPort`), checked after authentication,
+  so a forger cannot spend a partner's allowance; unauthenticated floods are bounded per claimed
+  partner by the H3 limits before the body is read (unknown names share one budget).
+- **Evidence:** request and answer bodies sealed like every other body; operators see state and
+  status only (`GET /admin/partners/{partner}/requests/{id}`).
+- **Not in M4:** amount or value quotas per partner (they need the application's request format,
+  i.e. a partner adapter); signing Aegis's answers to the partner (TLS carries them, the answer is
+  the application's own).
+- **Rejected:** API keys alone (a stolen key replays and alters requests; a signature binds the
+  request), nonces in memory (lost on restart, not shared across instances), and letting requests
+  through when rates cannot be checked.
 
 ## Design review log
 

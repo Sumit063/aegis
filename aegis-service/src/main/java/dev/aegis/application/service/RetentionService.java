@@ -1,6 +1,7 @@
 package dev.aegis.application.service;
 
 import dev.aegis.application.port.in.RetentionUseCase;
+import dev.aegis.application.port.out.PartnerRequestRepository;
 import dev.aegis.application.port.out.RetentionRepository;
 import java.time.Clock;
 import java.time.Duration;
@@ -24,11 +25,20 @@ public class RetentionService implements RetentionUseCase {
     private static final Logger log = LoggerFactory.getLogger(RetentionService.class);
 
     private final RetentionRepository repository;
+    private final PartnerRequestRepository partnerRequests;
+    private final PartnerSettings partner;
     private final TransactionTemplate tx;
     private final Clock clock;
 
-    public RetentionService(RetentionRepository repository, TransactionTemplate tx, Clock clock) {
+    public RetentionService(
+            RetentionRepository repository,
+            PartnerRequestRepository partnerRequests,
+            PartnerSettings partner,
+            TransactionTemplate tx,
+            Clock clock) {
         this.repository = repository;
+        this.partnerRequests = partnerRequests;
+        this.partner = partner;
         this.tx = tx;
         this.clock = clock;
     }
@@ -45,6 +55,11 @@ public class RetentionService implements RetentionUseCase {
         } while (deleted == BATCH);
         do {
             deleted = tx.execute(status -> repository.purgeOlderThan(cutoff, BATCH));
+            total += deleted;
+        } while (deleted == BATCH);
+        var partnerCutoff = clock.instant().minus(partner.retention());
+        do {
+            deleted = partnerRequests.purgeOlderThan(partnerCutoff, BATCH);
             total += deleted;
         } while (deleted == BATCH);
         if (total > 0) {

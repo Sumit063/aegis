@@ -4,7 +4,7 @@ import dev.aegis.provider.spi.Connection;
 import java.util.Collection;
 import java.util.Optional;
 
-/** The configured connections and applications. Read-only: they change only with a deployment. */
+/** The configured connections, applications and partners. Read-only: they change only with a deployment. */
 public interface DirectoryPort {
 
     Optional<Connection> connection(String name);
@@ -15,4 +15,6 @@ public interface DirectoryPort {
     Optional<Application> applicationByKey(String apiKey);
 
     Collection<Connection> connections();
+
+    Optional<Partner> partner(String name);
 }

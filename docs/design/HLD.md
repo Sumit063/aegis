@@ -83,6 +83,21 @@ any of them; only the adapter changes.
 | UPI PSP / bank | NPCI UPI | validate address | `RespPay` | UPI (XML, signed) |
 | Recharge platform | aggregator / operator | plan / amount check | recharge callback | aggregator-specific |
 
+### 3.2 Partners calling the application (M4)
+
+Many payment applications also *receive* payment instructions: resellers, agent networks and
+aggregators call the application's own API to submit recharges, bill payments or payouts. That
+traffic moves money too, so the same stance applies (LLD §14, D35):
+
+```
+ Partner ──► Aegis /partner/<operation>/… ──► Application's partner API
+             verify signature · fresh · granted · within rate · request ID once
+```
+
+A partner signs every request (HMAC over method, path, time, request ID and body). Aegis checks it,
+holds the partner to the operations and rate it was granted, and runs each request ID at most once:
+a retry gets the first answer, never a second recharge.
+
 ## 4. What Aegis checks
 
 **Inbound** (callback, webhook, async response, reply to an application request):
@@ -106,6 +121,16 @@ any of them; only the adapter changes.
 | 3 | No new payment request while one is in flight or after success | Double debit |
 | 4 | Status checks within the provider's limits (NPCI: first ≥ 90 s after authentication, ≤ 3 in 2 h) | Provider penalties |
 | 5 | Signed/encrypted with provider secrets held only by Aegis | Secret sprawl |
+
+**Partner requests** (M4, only where the application serves partners):
+
+| # | Check | Stops |
+|---|---|---|
+| 1 | Signature over method, path, time, request ID and body, by a secret of that partner | Forged or altered instructions, a stolen-but-unsigned key |
+| 2 | Signed within ±5 minutes | Replays of captured requests |
+| 3 | Operation and method granted to the partner; plain paths only | A partner reaching what it was not given |
+| 4 | Partner and operation rates | Floods, runaway clients, cost |
+| 5 | Request ID executed at most once; retries get the first answer | Double recharge or payout on a retry |
 
 Every message is stored (encrypted at rest) with a verdict: `PASSED`, or `BLOCKED` with a reason.
 Passed inbound messages are forwarded to the application as **the original message, unchanged, plus
@@ -155,6 +180,7 @@ NPCI and BBPS sign with private keys, so a leak on the application side cannot f
 | Gateway API | The application's outbound calls: check, sign, send, verify and store the reply |
 | Forwarder | Deliver passed messages to the application; retry with backoff |
 | Admin | Look up by reference, list blocks, re-forward, settings |
+| Partner API | Partners' requests to the application: verify, limit, execute once, proxy (M4) |
 
 Kafka lets Ingress acknowledge within provider deadlines (Razorpay: 5 s) without depending on the
 database. PostgreSQL enforces uniqueness and stores the records.
@@ -190,4 +216,4 @@ money.
 | M1 | Core gateway with Razorpay: inbound checks, outbound proxy, forwarding, admin |
 | M2 | Stripe and Cashfree adapters; load and failure tests |
 | M3 | NPCI-style XML adapters (BBPS, UPI) against a simulator |
-| M4 | Partner API protection and rate limits |
+| M4 | Partner API protection and rate limits: signed partner requests, scopes, one execution per request ID, shared rates |

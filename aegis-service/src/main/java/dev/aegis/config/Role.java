@@ -11,5 +11,7 @@ public enum Role {
     /** Delivers passed messages to applications over mTLS, signed, with retries. */
     FORWARDER,
     /** Internal investigation and operations API. */
-    ADMIN
+    ADMIN,
+    /** Public partner API: authenticates partners, holds them to their grants and rates, proxies once. */
+    PARTNER
 }

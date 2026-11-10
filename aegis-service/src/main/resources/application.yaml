@@ -81,7 +81,7 @@ info:
   roles: ${aegis.roles}
 
 aegis:
-  roles: ${AEGIS_ROLES:ingress,checker,gateway,forwarder,admin}
+  roles: ${AEGIS_ROLES:ingress,checker,gateway,forwarder,admin,partner}
   admin:
     # Operators' key for /admin/** (generated per environment by deploy.sh).
     api-key: ${AEGIS_ADMIN_API_KEY}

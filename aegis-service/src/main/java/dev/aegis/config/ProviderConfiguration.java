@@ -33,6 +33,9 @@ class ProviderConfiguration {
             if (app.returnUrl() != null) {
                 check("aegis.applications." + name + ".return-url", app.returnUrl(), allowPlainHttp);
             }
+            if (app.partnerUrl() != null) {
+                check("aegis.applications." + name + ".partner-url", app.partnerUrl(), allowPlainHttp);
+            }
         });
     }
 

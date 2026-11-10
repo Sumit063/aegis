@@ -38,7 +38,7 @@ class AegisApplicationIT extends IntegrationTest {
         assertThat(get("health/readiness")).contains("\"UP\"");
         assertThat(get("info"))
                 .contains("\"environment\":\"local\"", "\"version\":\"local\"")
-                .contains("\"roles\":\"ingress,checker,gateway,forwarder,admin\"");
+                .contains("\"roles\":\"ingress,checker,gateway,forwarder,admin,partner\"");
     }
 
     private String get(String path) throws Exception {

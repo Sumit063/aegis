@@ -6,6 +6,7 @@ import dev.aegis.application.port.out.EvidenceCipherPort;
 import dev.aegis.application.port.out.IngressLogPort;
 import dev.aegis.application.port.out.IngressRecord;
 import dev.aegis.application.port.out.MetricsPort;
+import dev.aegis.application.port.out.Partner;
 import dev.aegis.domain.message.MessageType;
 import dev.aegis.domain.message.Verdict;
 import dev.aegis.provider.spi.Connection;
@@ -44,6 +45,11 @@ final class Fakes {
             public Collection<Connection> connections() {
                 return connections;
             }
+
+            @Override
+            public Optional<Partner> partner(String name) {
+                return Optional.empty();
+            }
         };
     }
 
@@ -70,6 +76,12 @@ final class Fakes {
 
         @Override
         public void forwarded(String application, boolean delivered, boolean gaveUp) {}
+
+        @Override
+        public void partner(String partner, String operation, String result) {}
+
+        @Override
+        public void partnerUpstream(String partner, Duration took) {}
     };
 
     static final class IngressLog implements IngressLogPort {

@@ -6,6 +6,7 @@ import dev.aegis.adapter.in.web.dto.ValidationDto;
 import dev.aegis.adapter.in.web.security.AdminAuthentication;
 import dev.aegis.application.port.in.AdminUseCase;
 import dev.aegis.application.port.in.EvidenceReport;
+import dev.aegis.application.port.in.PartnerRequestView;
 import dev.aegis.application.port.in.SettingsUseCase;
 import dev.aegis.config.ConditionalOnRole;
 import dev.aegis.config.Role;
@@ -63,6 +64,12 @@ class AdminController {
     ResponseEntity<Void> reforward(@PathVariable long id, @PathVariable int n) {
         admin.reforward(id, n);
         return ResponseEntity.accepted().build();
+    }
+
+    /** A partner request by its request ID: state and answer status, never bodies (LLD §14). */
+    @GetMapping("/partners/{partner}/requests/{requestId}")
+    ResponseEntity<PartnerRequestView> partnerRequest(@PathVariable String partner, @PathVariable String requestId) {
+        return ResponseEntity.of(admin.partnerRequest(partner, requestId));
     }
 
     /** Proves stored evidence still opens (after a restore, before retiring a key). */

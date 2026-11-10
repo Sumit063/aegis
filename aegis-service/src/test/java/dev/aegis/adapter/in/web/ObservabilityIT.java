@@ -54,6 +54,8 @@ class ObservabilityIT extends IntegrationTest {
 
         assertThat(metrics)
                 .contains("aegis_ingress_ack_seconds")
+                .as("buckets, which the SlowAcknowledgement alert reads")
+                .contains("aegis_ingress_ack_seconds_bucket")
                 .contains("aegis_forward_lag_seconds")
                 .containsPattern("aegis_messages_total\\{.*reason=\"BAD_SIGNATURE\".*\\}");
     }
