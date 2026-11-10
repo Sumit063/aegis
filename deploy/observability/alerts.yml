@@ -78,3 +78,9 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "{{ $labels.partner }}: the application did not answer a partner request; its outcome must be checked (RUNBOOK §3)."
+
+      - alert: PartnerLimitsUnavailable
+        expr: sum(increase(aegis_partner_requests_total{result="LIMITS_UNAVAILABLE"}[5m])) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: Partner requests are refused because Redis (partner rates) does not answer; nothing reaches the application until it does (RUNBOOK §3).
