@@ -401,7 +401,9 @@ aegis:
   (`aegis_partner_upstream_seconds`).
 - Alerts: any `BAD_SIGNATURE` burst, any `AMOUNT_MISMATCH` or `DOWNGRADE`, forward `FAILED`, Kafka
   lag; partner forgeries, partner rate store unavailable, partner outcomes unknown.
-- How to look: RUNBOOK §1.
+- How to look: RUNBOOK §1. Every server runs Prometheus (rules: `deploy/observability/alerts.yml`)
+  and Grafana (dashboard "Aegis", provisioned) next to Aegis, on 127.0.0.1; `deploy/check.sh` fails
+  a deploy whose metrics are not scraped.
 - Logs: references only. Never bodies, secrets or customer data.
 
 ## 13. Test catalogue

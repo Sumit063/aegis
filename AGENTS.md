@@ -17,7 +17,7 @@ Java 25 · Spring Boot 4 · Kafka · PostgreSQL · Redis (partner rates) · Dock
 |---|---|
 | Where Aegis sits, payment flows, terms | `docs/design/PAYMENT-FLOWS.md` |
 | Role, checks, zero trust, guarantees, failures | `docs/design/HLD.md` |
-| Endpoints, pipelines, adapter SPI, schema, test catalogue (T1–T19) | `docs/design/LLD.md` |
+| Endpoints, pipelines, adapter SPI, schema, partner API, test catalogue (T1–T30) | `docs/design/LLD.md` |
 | Every decision and why | `docs/design/DECISIONS.md` |
 | Code layout, dependency rules, design patterns | `docs/engineering/ARCHITECTURE.md` |
 | Pipelines and deployment | `docs/engineering/CICD.md` |

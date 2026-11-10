@@ -126,6 +126,9 @@ instead (LLD §11.2).
 | Coverage | build | JaCoCo ≥ 80 % lines (domain, application) |
 | Exploits | CI job `Exploit Lab` | `lab/run.sh`: F1–F10 exploited directly, blocked with the flaw off, blocked through Aegis |
 | Crashes | CI job `Failure lab` | `lab/failures.sh`: SIGKILL of Aegis, Kafka, PostgreSQL under traffic; every order fulfilled exactly once |
+| NPCI | CI job `NPCI lab` | `lab/npci.sh`: BBPS and UPI flows told as they happened, attacks stopped, 300 payments settled once |
+| Partners | CI job `Partner lab` | `lab/partners.sh`: partner attacks work directly and are stopped through two Aegis instances; Redis and shop failures; every request executed exactly once |
+| Metrics after a deploy | CD (`deploy/check.sh`) | Prometheus scrapes Aegis and has loaded the alert rules |
 | Toolchain | build | Maven Enforcer: Java 25, Maven ≥ 3.9 |
 | Dependency updates | weekly | Dependabot (Maven, Actions, Docker) |
 

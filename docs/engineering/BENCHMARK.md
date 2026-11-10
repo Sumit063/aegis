@@ -74,6 +74,22 @@ Signing happens only on application-initiated calls (fetch, payment, status), wh
 the switch for far longer. In the NPCI lab, 300 concurrent bill and UPI payments settled through
 Aegis in about 7 seconds on the shared lab VM (lab/NPCI.md).
 
+### M4: partner API (2026-11-10)
+
+`KEEP=1 lab/partners.sh`, then `java lab/bench/PartnerBench.java <requests> <concurrency> [copies]`
+on the same laptop (Apple M5, 10 cores; Colima VM 4 CPUs, 6 GB). Each request: HMAC verification,
+two Redis rate decisions, the request-ID claim in PostgreSQL, the shop's answer, the sealed answer
+recorded. Requests alternate between the lab's two Aegis instances.
+
+| Run | Requests | Throughput | Latency p50 / p95 / p99 | Executed exactly once |
+|---|---|---|---|---|
+| Steady (concurrency 8) | 3,000 | 797 req/s | 8.6 / 19.3 / 32.9 ms | 3,000 / 3,000 |
+| Burst (concurrency 32) | 3,000 | 1,712 req/s | 16.2 / 36.4 / 48.4 ms | 3,000 / 3,000 |
+| Retry storm (every request twice at once, concurrency 32) | 4,000 (2,000 × 2) | 2,209 req/s | 12.4 / 30.2 / 45.0 ms | 2,000 / 2,000 (1,286 copies told 409 in progress) |
+
+The latency includes the shop's own work and two network hops inside one VM; the lab's bash load
+(`lab/partners.sh`, ~150 requests/s) is bound by spawning curl and openssl, not by Aegis.
+
 ## Reading these numbers
 
 - Acknowledgement (what a provider waits for, Razorpay allows 5 s) stays in milliseconds even in a
