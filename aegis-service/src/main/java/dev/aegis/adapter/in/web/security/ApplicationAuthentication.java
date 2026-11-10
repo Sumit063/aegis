@@ -41,14 +41,16 @@ public class ApplicationAuthentication implements HandlerInterceptor {
             return refuse(response, HttpStatus.UNAUTHORIZED, "missing or unknown application key");
         }
         String required = caller.get().clientCertSubject();
-        if (required != null && !subject(request).map(required::equals).orElse(false)) {
+        if (required != null
+                && !certificateSubject(request).map(required::equals).orElse(false)) {
             return refuse(response, HttpStatus.FORBIDDEN, "client certificate does not match the application");
         }
         request.setAttribute(CALLER, caller.get().name());
         return true;
     }
 
-    private static Optional<String> subject(HttpServletRequest request) {
+    /** The verified client certificate's subject, when the TLS terminator passed one on. */
+    public static Optional<String> certificateSubject(HttpServletRequest request) {
         if (request.getAttribute(CERTIFICATES) instanceof X509Certificate[] chain && chain.length > 0) {
             return Optional.of(chain[0].getSubjectX500Principal().getName());
         }

@@ -1,6 +1,7 @@
 # Aegis — Low-Level Design
 
-Scope: M1 (Razorpay). Later providers are adapters; the engine, APIs and tables don't change.
+Scope: M1 (Razorpay), extended by adapters (M2, M3) and the partner API (M4, §14). Providers are
+adapters; the engine, APIs and tables don't change for them.
 
 ## 1. Terms
 
@@ -23,11 +24,13 @@ Scope: M1 (Razorpay). Later providers are adapters; the engine, APIs and tables 
 | `POST /gw/{connection}/validations` | Application | Validation call, passed through to the provider |
 | `POST /gw/{connection}/payments` | Application | Payment request (server-to-server providers: NPCI/BBPS) |
 | `POST /gw/{connection}/status` | Application | Status check; the only way a status check ever happens |
-| `GET/POST/PUT /admin/…` | Operators (private, admin key) | `payments/{id}`, `payments?ref=`, `validations?ref=`, `blocked`, `payments/{id}/messages/{n}/forward`, `settings`, `evidence` (sealed values per key; opens the most recent, never shows them) |
+| `GET/POST/PUT/PATCH/DELETE /partner/{operation}/…` | Partner (server to server, signed) | The application's partner API through Aegis (§14) |
+| `GET/POST/PUT /admin/…` | Operators (private, admin key) | `payments/{id}`, `payments?ref=`, `validations?ref=`, `blocked`, `payments/{id}/messages/{n}/forward`, `settings`, `evidence` (sealed values per key; opens the most recent, never shows them), `partners/{partner}/requests/{id}` (state and status of a partner request) |
 
 Gateway API bodies are **provider-native**: the application sends what it would have sent to the
 provider. Aegis adds authentication, signing and encryption, and returns the provider's reply plus
-an `X-Aegis-Verdict` header. Public: `/in/**` only. Private (mTLS): `/gw/**`, `/admin/**`.
+an `X-Aegis-Verdict` header. Public: `/in/**`, and `/partner/**` where partners are served.
+Private (mTLS): `/gw/**`, `/admin/**`.
 
 ## 3. Inbound pipeline
 
@@ -230,6 +233,12 @@ CREATE TABLE payment_messages (provider text, message_id text, payment_id bigint
 CREATE TABLE payment_facts (payment_id bigint REFERENCES payments ON DELETE CASCADE, outcome text,
   fact_ref text DEFAULT '', n int, PRIMARY KEY (payment_id, outcome, fact_ref));  -- one fact, once
 
+-- V4: partner requests (§14, D35); one row per partner and request ID
+CREATE TABLE partner_requests (partner text, request_id text, request_hash text, method text,
+  path text, state text CHECK (state IN ('IN_PROGRESS','ANSWERED','UNKNOWN')), request text,
+  http_status int, content_type text, response text, created_at timestamptz, updated_at timestamptz,
+  PRIMARY KEY (partner, request_id));             -- one execution per request ID
+
 CREATE TABLE config (
   key text PRIMARY KEY, value jsonb NOT NULL, version int NOT NULL,
   updated_by text NOT NULL, updated_at timestamptz NOT NULL
@@ -267,7 +276,7 @@ reply), `CALLBACK`, `WEBHOOK`, `ASYNC_RESPONSE`.
 | Evidence is private | Every `body`, `request`, `reply` is AES-256-GCM ciphertext (`enc:v1:<key id>:<base64(iv ‖ ciphertext ‖ tag)>`); keys `aegis.evidence.keys`, `current` seals, all open |
 | Amount | Lives on the validation only; a payment's messages are compared with it |
 | Rows stay small | A payment has a handful of messages; repeats only increase a counter; bodies are capped (64 KB) |
-| Retention | 180 days after a record's **last activity** (`updated_at`), never while a delivery is due; untrusted rows 7 days (RUNBOOK §5); batched delete job |
+| Retention | 180 days after a record's **last activity** (`updated_at`), never while a delivery is due; untrusted rows 7 days; partner requests 30 days (`aegis.partner.retention`) (RUNBOOK §5); batched delete job |
 
 `validations.status` and `payments.status` are summaries for fast checks, not business workflows:
 `CREATED → PAID` (or `FAILED` when the provider rejected the validation); a payment's status is its
@@ -353,10 +362,29 @@ aegis:
       return-url: https://shop.example/payment/result
       client-cert-subject: CN=shop
       jwe-public-key: ${SHOP_JWE_PUBLIC_KEY:}
+      partner-url: https://shop.internal/partner-api     # the shop's own partner API (§14)
+  partners:                                              # M4: who may call it, and what
+    acme:
+      application: shop
+      secrets: [ "${ACME_SECRET}", "${ACME_SECRET_PREVIOUS:}" ]   # 32+ characters, newest first
+      client-cert-subject: ""                            # e.g. CN=acme to require a certificate
+      requests-per-minute: 600                           # over all its operations
+      burst: 50
+      operations:                                        # first path segment → methods (+ own rate)
+        recharges: { methods: [ POST ], requests-per-minute: 120, burst: 20 }
+        status:    { methods: [ GET ] }
+  partner:
+    freshness: 5m          # signing time vs. Aegis's clock, either way
+    answer-timeout: 30s    # a request ID in progress longer than this has an unknown outcome
+    retention: 30d         # request IDs and answers kept (≥ 2 × freshness)
+    limiter: local         # rates kept per instance
 ```
 
 - Startup fails on a missing or empty secret, a provider secret shorter than 16 characters, an
-  application secret shorter than 32, or a connection naming an unknown application. Empty
+  application or partner secret shorter than 32, a connection or partner naming an unknown
+  application, a partner of an application without `partner-url`, a partner with no operation, an
+  operation name outside `[a-z0-9-]`, a method other than GET/POST/PUT/PATCH/DELETE, or a rate
+  that is not positive. Empty
   "previous" slots are dropped. Signing uses the first secret of a list; verification accepts any.
 - Runtime settings (today: pause forwarding per application) live in `config`, versioned with who
   changed them. Each instance keeps an immutable snapshot, reloaded at start and every 5 s.
@@ -366,8 +394,12 @@ aegis:
 ## 12. Observability
 
 - Metrics: messages by provider, type and verdict; block reasons; acknowledgement latency; forward
-  lag; forward failures.
-- Alerts: any `BAD_SIGNATURE` burst, any `AMOUNT_MISMATCH` or `DOWNGRADE`, forward `FAILED`, Kafka lag.
+  lag; forward failures; partner requests by partner, operation and result
+  (`aegis_partner_requests_total`); application latency for partners
+  (`aegis_partner_upstream_seconds`).
+- Alerts: any `BAD_SIGNATURE` burst, any `AMOUNT_MISMATCH` or `DOWNGRADE`, forward `FAILED`, Kafka
+  lag; partner forgeries, partner rate store unavailable, partner outcomes unknown.
+- How to look: RUNBOOK §1.
 - Logs: references only. Never bodies, secrets or customer data.
 
 ## 13. Test catalogue
@@ -393,3 +425,49 @@ aegis:
 | T17 | Secret rotation: previous secret still verifies until removed | PASSED |
 | T18 | Missing secret at startup | startup fails |
 | T19 | Aegis never calls a provider without an application request | no outbound traffic in any inbound-only test |
+| T20 | Signed partner request | answered by the application once, signed by Aegis, partner credentials not passed on |
+| T21 | Forged, tampered, stale, future, unknown-partner or unsigned partner request | 401, nothing stored, application not called |
+| T22 | Operation, method or path not granted (incl. dot segments, encoded slashes) | 403 (or 400 from the server), application not called |
+| T23 | Retry with the same request ID | the stored answer, `X-Aegis-Replayed: true`, executed once |
+| T24 | 20 concurrent copies of one request | executed once; the others 409 or the replayed answer |
+| T25 | Request ID reused for a different request | 422 `REQUEST_ID_REUSED` |
+| T26 | Partner over its operation's rate | 429 + `Retry-After`; its other operations and other partners unaffected |
+| T27 | Partner secret rotation | previous secret still verifies |
+| T28 | Application answers 5xx, or never answers | stored and replayed; never answered: 504 for good; never reached: 503 and the retry runs |
+
+## 14. Partner pipeline (M4)
+
+An application that offers a payment API to partners puts Aegis in front of it (D35). The partner
+calls `https://aegis…/partner/<operation>/…`; Aegis calls `<partner-url>/<operation>/…`.
+
+```
+ request   X-Partner-Id: acme · X-Request-Id: r-1 · X-Timestamp: <unix s>
+           X-Signature: v1=hex(HMAC-SHA256(secret, v1\n METHOD\n /partner/path?query\n ts\n id\n hex(SHA-256(body))))
+
+  0. bound      per claimed partner, before the body is read (H3 limits; unknown names share one)
+                                                                              → 429 / 503
+  1. parse      known partner; request ID [A-Za-z0-9._:-]{1,64}; timestamp digits → 401 UNAUTHENTICATED
+  2. verify     signature by any of the partner's secrets (constant time)        → 401 UNAUTHENTICATED
+                client-certificate subject, if configured                        → 403 WRONG_CERTIFICATE
+  3. fresh      |now − ts| ≤ 5 min                                                → 401 STALE
+  4. scope      plain path; operation granted; method granted                    → 403 NOT_PERMITTED
+  5. rate       partner, then operation (RateLimiterPort)                        → 429 RATE_LIMIT + Retry-After
+                store unreachable                                                → 503 LIMITS_UNAVAILABLE
+  6. claim      INSERT (partner, request_id) … ON CONFLICT DO NOTHING
+                taken: same request answered → stored answer, X-Aegis-Replayed: true
+                       same request running  → 409 IN_PROGRESS (past answer-timeout: 504)
+                       outcome unknown       → 504 OUTCOME_UNKNOWN
+                       different request     → 422 REQUEST_ID_REUSED
+                database down                                                    → 503
+  7. call       <partner-url><path>, body as sent; X-Aegis-Partner, X-Aegis-Request-Id,
+                X-Aegis-Timestamp, X-Aegis-Signature: v1=hex(HMAC-SHA256(app signing secret,
+                ts.partner.id.METHOD.path.body)); no database transaction open
+                never reached (connect refused/timeout) → release the ID → 503 APPLICATION_UNAVAILABLE
+                no answer in 10 s → UNKNOWN → 504 OUTCOME_UNKNOWN
+  8. record     ANSWERED with status, content type and the sealed answer; return it unchanged
+```
+
+Refusals are RFC 9457 problems with a `reason`. Request and answer bodies are sealed at rest and
+the path is kept without its query (it can carry personal data); Admin shows state and status only. An answer that cannot be recorded (database lost after the
+call) still goes to the partner; the claim then reads as unknown once `answer-timeout` passes.
+

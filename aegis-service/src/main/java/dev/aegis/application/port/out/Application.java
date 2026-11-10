@@ -11,6 +11,7 @@ import java.util.Objects;
  * @param clientCertSubject required client-certificate subject on the Gateway API, or null
  * @param returnUrl where the customer's browser goes after a Checkout callback, or null
  * @param jwePublicKey the application's RSA public key (base64 X.509) to encrypt forwards, or null
+ * @param partnerUrl base URL of the application's partner API, or null when it has none
  */
 public record Application(
         String name,
@@ -19,7 +20,8 @@ public record Application(
         URI returnUrl,
         String clientCertSubject,
         Secret signingSecret,
-        String jwePublicKey) {
+        String jwePublicKey,
+        URI partnerUrl) {
 
     public Application {
         Objects.requireNonNull(name, "name");

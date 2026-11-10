@@ -1,5 +1,6 @@
 package dev.aegis.adapter.in.web.security;
 
+import dev.aegis.application.port.out.DirectoryPort;
 import dev.aegis.application.service.IngressLimits;
 import dev.aegis.application.service.TokenBucket;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -16,9 +17,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Per-connection limits on the public endpoints ({@code /in/{connection}/...}), applied before the
- * body is read: a request rate (429) and a cap on requests in progress (503). Providers retry both,
- * so genuine messages are delayed, never lost; a flood on one connection cannot starve the others.
+ * Per-caller limits on the public endpoints, applied before the body is read: a request rate (429)
+ * and a cap on requests in progress (503). The caller is the connection of {@code /in/{connection}/...}
+ * or the partner named on {@code /partner/...}; every name that is not configured shares one key, so
+ * invented names cannot grow the maps. Providers retry both, so genuine messages are delayed, never
+ * lost; a flood on one connection or partner cannot starve the others. A partner's own rate is
+ * applied after it is authenticated (LLD §14).
  */
 @Component
 public class IngressLimitFilter extends OncePerRequestFilter {
@@ -27,22 +31,25 @@ public class IngressLimitFilter extends OncePerRequestFilter {
     private final TokenBucket rate;
     private final Map<String, Semaphore> inProgress = new ConcurrentHashMap<>();
     private final MeterRegistry metrics;
+    private final DirectoryPort directory;
 
-    public IngressLimitFilter(IngressLimits limits, Clock clock, MeterRegistry metrics) {
+    public IngressLimitFilter(IngressLimits limits, Clock clock, MeterRegistry metrics, DirectoryPort directory) {
         this.limits = limits;
+        this.directory = directory;
         this.rate = new TokenBucket(limits.requestsPerMinute(), limits.burst(), clock);
         this.metrics = metrics;
     }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith("/in/");
+        String uri = request.getRequestURI();
+        return !uri.startsWith("/in/") && !uri.startsWith("/partner/");
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        String connection = connection(request.getRequestURI());
+        String connection = caller(request);
         if (!rate.tryAcquire(connection)) {
             refuse(response, connection, 429, "rate");
             return;
@@ -59,12 +66,18 @@ public class IngressLimitFilter extends OncePerRequestFilter {
         }
     }
 
-    // "/in/razorpay/callback" → "razorpay". Unknown names are limited too, then rejected with 404.
-    private static String connection(String uri) {
+    // "/in/razorpay/callback" → "razorpay"; a partner → "partner:<name>". Unknown names share "?" and
+    // "partner:?": limited together, then rejected (404, 401).
+    private String caller(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        if (uri.startsWith("/partner/")) {
+            String partner = request.getHeader("X-Partner-Id");
+            return partner != null && directory.partner(partner).isPresent() ? "partner:" + partner : "partner:?";
+        }
         String rest = uri.substring("/in/".length());
         int slash = rest.indexOf('/');
         String name = slash < 0 ? rest : rest.substring(0, slash);
-        return name.length() > 64 ? name.substring(0, 64) : name;
+        return directory.connection(name).isPresent() ? name : "?";
     }
 
     private void refuse(HttpServletResponse response, String connection, int status, String limit) throws IOException {

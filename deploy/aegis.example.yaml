@@ -51,4 +51,22 @@
 #       return-url: https://shop.example/payment/result
 #       client-cert-subject: ""                   # e.g. CN=shop to require a client certificate
 #       jwe-public-key: ""                        # base64 RSA public key to encrypt forwards
+#       partner-url: https://shop.internal/partner-api   # only if partners call the shop (below)
+#
+# Partners calling the shop's own API through /partner/<operation>/... (LLD §14):
+#
+#   partners:
+#     acme:
+#       application: shop
+#       secrets: [ "${ACME_SECRET}", "${ACME_SECRET_PREVIOUS:}" ]   # 32+ characters, current first
+#       client-cert-subject: ""                   # e.g. CN=acme to require a client certificate
+#       requests-per-minute: 600                  # over all its operations
+#       burst: 50
+#       operations:                               # first path segment → methods (+ its own rate)
+#         recharges: { methods: [ POST ], requests-per-minute: 120, burst: 20 }
+#         status: { methods: [ GET ] }
+#   partner:
+#     freshness: 5m                               # defaults shown
+#     answer-timeout: 30s
+#     retention: 30d
 aegis: {}

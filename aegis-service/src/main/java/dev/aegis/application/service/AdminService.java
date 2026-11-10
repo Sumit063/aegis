@@ -3,9 +3,11 @@ package dev.aegis.application.service;
 import dev.aegis.application.port.in.AdminUseCase;
 import dev.aegis.application.port.in.BadRequestException;
 import dev.aegis.application.port.in.EvidenceReport;
+import dev.aegis.application.port.in.PartnerRequestView;
 import dev.aegis.application.port.out.EvidenceCipherPort;
 import dev.aegis.application.port.out.EvidenceRepository;
 import dev.aegis.application.port.out.ForwardRepository;
+import dev.aegis.application.port.out.PartnerRequestRepository;
 import dev.aegis.application.port.out.PaymentRepository;
 import dev.aegis.application.port.out.ValidationRepository;
 import dev.aegis.domain.payment.Payment;
@@ -30,6 +32,7 @@ public class AdminService implements AdminUseCase {
     private final ForwardRepository forwarding;
     private final EvidenceRepository evidence;
     private final EvidenceCipherPort cipher;
+    private final PartnerRequestRepository partnerRequests;
     private final Clock clock;
 
     public AdminService(
@@ -38,12 +41,14 @@ public class AdminService implements AdminUseCase {
             ForwardRepository forwarding,
             EvidenceRepository evidence,
             EvidenceCipherPort cipher,
+            PartnerRequestRepository partnerRequests,
             Clock clock) {
         this.payments = payments;
         this.validations = validations;
         this.forwarding = forwarding;
         this.evidence = evidence;
         this.cipher = cipher;
+        this.partnerRequests = partnerRequests;
         this.clock = clock;
     }
 
@@ -96,5 +101,20 @@ public class AdminService implements AdminUseCase {
                     recent.size());
         }
         return new EvidenceReport(evidence.countByKey(), recent.size(), unreadable);
+    }
+
+    @Override
+    public Optional<PartnerRequestView> partnerRequest(String partner, String requestId) {
+        return partnerRequests
+                .find(partner, requestId)
+                .map(row -> new PartnerRequestView(
+                        row.partner(),
+                        row.requestId(),
+                        row.method(),
+                        row.path(),
+                        row.stored().state().name(),
+                        row.httpStatus(),
+                        row.stored().startedAt(),
+                        row.updatedAt()));
     }
 }

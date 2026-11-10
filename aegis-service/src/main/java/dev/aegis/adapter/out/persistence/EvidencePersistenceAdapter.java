@@ -7,7 +7,7 @@ import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-/** Sealed values are strings anywhere in the payments' messages and the validations' data. */
+/** Sealed values: strings in the payments' messages and the validations' data, and partner bodies. */
 @Component
 class EvidencePersistenceAdapter implements EvidenceRepository {
 
@@ -15,7 +15,10 @@ class EvidencePersistenceAdapter implements EvidenceRepository {
     private static final String ALL = """
             SELECT v #>> '{}' AS sealed, p.updated_at FROM payments p, jsonb_path_query(p.messages, %1$s) v
             UNION ALL
-            SELECT v #>> '{}', w.updated_at FROM validations w, jsonb_path_query(w.data, %1$s) v""".formatted(SEALED);
+            SELECT v #>> '{}', w.updated_at FROM validations w, jsonb_path_query(w.data, %1$s) v
+            UNION ALL
+            SELECT s, r.updated_at FROM partner_requests r, unnest(ARRAY[r.request, r.response]) s
+            WHERE s LIKE 'enc:v1:%%'""".formatted(SEALED);
 
     private final JdbcTemplate jdbc;
 
