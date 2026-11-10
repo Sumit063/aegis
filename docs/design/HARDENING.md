@@ -237,3 +237,48 @@ timestamp is the system clock, not the injected one; a status reply that fails v
 answered `BAD_SIGNATURE` but not stored as evidence (as for unparseable replies); two *concurrent*
 fetches with the same new bill reference can both pass the reuse check, and the second then fails
 closed (500) at the database's unique constraint.
+
+## 16. M4: partner API (2026-11-10)
+
+Partners calling an application's own payment API through Aegis (F25–F27, LLD §14, D35, D36).
+
+| Test | Result |
+|---|---|
+| Domain and signatures (`PartnerGateTest`, `PartnerSignatureTest`) | freshness both ways and at the edges; every non-plain path (dot segments, encoded slashes, `//`, spaces, backslashes) has no operation; every repeat case; any change to method, path, time, ID or body fails the signature |
+| Service (`PartnerServiceTest`) | rate store down → 503 (fail closed); application never reached → ID released, retry runs; no answer → 504 for good; an answer that cannot be recorded still reaches the partner; a database that cannot claim stops the request before the application |
+| Rates (`LocalRateLimiterTest`, `RedisRateLimiterIT`) | burst, steady rate, exact retry-after, independent keys, a clock stepping back; two instances, 100 concurrent requests, one allowance (T29); Redis paused → refused in < 2 s, then recovered (T30) |
+| Integration (`PartnerIT`, `PartnerRedisIT`) | T20–T28, T30 against real PostgreSQL, Kafka and Redis: upstream signature, credentials not passed on, 20 concurrent copies executed once, reuse 422, rates per partner and operation, rotation, error answers replayed, Admin shows no bodies, query never kept in clear, metrics, retention |
+| Partner lab (`lab/partners.sh`, CI) | without Aegis a replay, an altered amount and a retry storm all execute (D1–D3); through two Aegis instances every attack is stopped before the shop (P1–P12), Redis and shop failures never cause a second execution (X1–X3), 500 recharges sent twice at once executed exactly once ([PARTNERS.md](../../lab/PARTNERS.md)) |
+| Benchmark (`lab/bench/PartnerBench.java`) | 1,712 requests/s at concurrency 32, p99 48 ms, across two instances; retry storm (every request twice at once) 2,209 requests/s, each executed once (BENCHMARK) |
+
+Findings, each reproduced by a failing test before the fix:
+
+| Finding | Severity | Status |
+|---|---|---|
+| The public-endpoint limiter (H3) keyed its maps by the connection name in the URL, so invented names (`/in/<random>`) grew them without bound | major | fixed: names that are not configured share one key (`?`, `partner:?`) |
+| The acknowledgement timer published client-side quantiles only, so the `SlowAcknowledgement` alert and the dashboard's p99 panel had no `_bucket` series and could never show anything | major | fixed: histogram buckets published (`ObservabilityIT` asserts them) |
+| A partner request's query string (which can carry a phone number) was kept in clear in `partner_requests.path` | minor | fixed: only the path is kept in clear; the query is inside the sealed body's request hash |
+| NPCI lab N12 read the desk before the asynchronous SUCCESS was forwarded (flaky in CI) | — | fixed: waits for the forward |
+
+Assumptions and limits:
+- No amount or value quotas per partner: they need the application's request format (a partner
+  adapter). Rates count requests, not money.
+- A request ID is unique per partner for the retention period (30 days); a request re-signed with
+  an older ID after that runs again.
+- A partner's clock must be within ±5 minutes; Aegis's answers to partners are the application's
+  own, carried over TLS, not signed by Aegis.
+- One Redis per environment, no replication: losing it refuses partner requests until it is back
+  (fail closed, alerted); allowances start full after a restart.
+- Only the application's `Content-Type` is passed back; other answer headers are not.
+- A request ID still `IN_PROGRESS` after a crash is reported `OUTCOME_UNKNOWN` once the answer
+  timeout passes; its row is not rewritten.
+- Alerts are evaluated by Prometheus on every server; delivering them (Alertmanager, a pager) is
+  not part of the stack yet.
+
+Code review of F25–F27 against the `code-review` checklist: no partner request reaches storage or
+the application before its signature verifies; nothing is written to the database before the
+partner is authenticated; no network call inside a transaction; secrets, bodies and queries never
+in logs (request IDs only after authentication); the claim is one statement, so instances cannot
+both win; Redis is used by the partner API only. Accepted: an unknown partner name is refused
+without computing an HMAC (partner names are not secrets).
+

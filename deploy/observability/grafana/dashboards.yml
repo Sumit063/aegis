@@ -1,0 +1,8 @@
+# Grafana provisioning: loads observability/grafana-dashboard.json ("Aegis").
+apiVersion: 1
+providers:
+  - name: aegis
+    type: file
+    disableDeletion: true
+    options:
+      path: /var/lib/grafana/dashboards

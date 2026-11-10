@@ -18,6 +18,8 @@ ADMIN="Authorization: Bearer $(grep ^AEGIS_ADMIN_API_KEY= .env | cut -d= -f2)"  
 | Oldest undelivered message | `curl -s 127.0.0.1:8181/actuator/prometheus \| grep aegis_forward_lag` |
 | Every Aegis metric | `curl -s 127.0.0.1:8181/actuator/prometheus \| grep ^aegis_` |
 | Partner traffic by result | `curl -s 127.0.0.1:8181/actuator/prometheus \| grep aegis_partner_requests_total` |
+| Dashboards and alerts | from a laptop: `ssh -L 3100:127.0.0.1:3100 -L 9190:127.0.0.1:9190 aegis-server`, then Grafana <http://localhost:3100> (user `admin`, password `GRAFANA_ADMIN_PASSWORD` in `.env`), dashboard "Aegis"; firing alerts at <http://localhost:9190/alerts>. Production uses 3000/9090, dev 3200/9290 |
+| Prometheus scrapes Aegis | `scripts/check.sh staging` (lines "metrics" and "alerts") |
 
 ## 2. Guarantees and their limits
 
