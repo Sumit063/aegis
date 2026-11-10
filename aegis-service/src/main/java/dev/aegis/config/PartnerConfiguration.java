@@ -11,8 +11,8 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 class PartnerConfiguration {
 
-    /** Where partner rates are kept: this instance's memory. */
-    static final Set<String> LIMITERS = Set.of("local");
+    /** Where partner rates are kept (DECISIONS D36): this instance's memory, or Redis for all instances. */
+    static final Set<String> LIMITERS = Set.of("local", "redis");
 
     /** Bound by the {@code @Bean} method below (not scanned), with the defaults as initial values. */
     static class Values {
@@ -20,6 +20,7 @@ class PartnerConfiguration {
         Duration answerTimeout = PartnerSettings.DEFAULTS.answerTimeout();
         Duration retention = PartnerSettings.DEFAULTS.retention();
         String limiter = "local";
+        String redisUrl;
 
         public void setFreshness(Duration value) {
             freshness = value;
@@ -36,6 +37,10 @@ class PartnerConfiguration {
         public void setLimiter(String value) {
             limiter = value;
         }
+
+        public void setRedisUrl(String value) {
+            redisUrl = value;
+        }
     }
 
     @Bean
@@ -48,6 +53,9 @@ class PartnerConfiguration {
     PartnerSettings partnerSettings(Values values) {
         if (!LIMITERS.contains(values.limiter)) {
             throw new IllegalStateException("aegis.partner.limiter must be one of " + LIMITERS);
+        }
+        if (values.limiter.equals("redis") && (values.redisUrl == null || values.redisUrl.isBlank())) {
+            throw new IllegalStateException("aegis.partner.redis-url must be set when aegis.partner.limiter is redis");
         }
         try {
             return new PartnerSettings(values.freshness, values.answerTimeout, values.retention);

@@ -92,6 +92,10 @@ aegis:
     # AEGIS_KAFKA_REPLICAS=3 and AEGIS_KAFKA_MIN_INSYNC=2 (RUNBOOK §2). Applies when topics are created.
     replicas: ${AEGIS_KAFKA_REPLICAS:1}
     min-insync-replicas: ${AEGIS_KAFKA_MIN_INSYNC:1}
+  partner:
+    # Where partner rates are kept: local (this instance) or redis (every instance, DECISIONS D36).
+    limiter: ${AEGIS_PARTNER_LIMITER:local}
+    redis-url: ${AEGIS_REDIS_URL:redis://localhost:6379}
   evidence:
     # Encrypts every stored message body. Rotate by adding a key and making it current; keep a retired
     # key until no retained record and no kept backup holds data sealed with it (RUNBOOK §6).
