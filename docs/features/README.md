@@ -82,9 +82,10 @@ failure lab with bill payments run in CI, and the review findings are fixed (HAR
 
 ## M4 — partner API protection and rate limits
 
-Design: HLD §3.2 · LLD §14 · decision D35.
+Design: HLD §3.2 · LLD §14 · decisions D35, D36.
 
 | ID | Feature | Status |
 |---|---|---|
 | F25 | Partner API: signed requests, freshness, scopes, rates, one execution per request ID, proxy, Admin lookup | done |
+| F26 | Shared partner rates in Redis (GCRA script), fail closed, in the deploy stack | done |
 

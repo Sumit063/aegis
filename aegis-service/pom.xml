@@ -55,6 +55,12 @@
       <artifactId>nimbus-jose-jwt</artifactId>
     </dependency>
 
+    <!-- Partner rates shared by every instance (aegis.partner.limiter: redis, DECISIONS D36) -->
+    <dependency>
+      <groupId>io.lettuce</groupId>
+      <artifactId>lettuce-core</artifactId>
+    </dependency>
+
     <!-- Operations -->
     <dependency>
       <groupId>org.springframework.boot</groupId>

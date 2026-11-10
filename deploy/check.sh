@@ -17,7 +17,7 @@ echo "Aegis · $ENV_NAME"
 # 1. Containers: running, and healthy where they have a health check. Locally the service runs
 #    from the IDE, so only its dependencies are containers.
 services=(postgres kafka)
-[[ "$ENV_NAME" != local ]] && services+=(aegis backup)
+[[ "$ENV_NAME" != local ]] && services+=(redis aegis backup)
 for s in "${services[@]}"; do
   state="$(docker inspect -f '{{.State.Status}}{{if .State.Health}} {{.State.Health.Status}}{{end}}' "$PROJECT-$s-1" 2>/dev/null)"
   case "$state" in
