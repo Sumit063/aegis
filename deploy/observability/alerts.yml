@@ -66,3 +66,15 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: More than 1000 messages waiting for the Checker (is PostgreSQL up?).
+
+      - alert: PartnerForgeries
+        expr: sum by (partner) (increase(aegis_partner_requests_total{result=~"UNAUTHENTICATED|STALE|WRONG_CERTIFICATE"}[5m])) > 20
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.partner }}: more than 20 unauthenticated partner requests in 5 minutes (a forger, or a partner with a wrong clock or secret)."
+
+      - alert: PartnerOutcomeUnknown
+        expr: sum by (partner) (increase(aegis_partner_requests_total{result="OUTCOME_UNKNOWN"}[15m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.partner }}: the application did not answer a partner request; its outcome must be checked (RUNBOOK §3)."

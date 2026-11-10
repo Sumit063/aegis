@@ -16,6 +16,8 @@ ADMIN="Authorization: Bearer $(grep ^AEGIS_ADMIN_API_KEY= .env | cut -d= -f2)"  
 | Readiness (database + Kafka) | `curl -s 127.0.0.1:8181/actuator/health/readiness` |
 | What was blocked recently | `curl -s -H "$ADMIN" 127.0.0.1:8180/admin/blocked` |
 | Oldest undelivered message | `curl -s 127.0.0.1:8181/actuator/prometheus \| grep aegis_forward_lag` |
+| Every Aegis metric | `curl -s 127.0.0.1:8181/actuator/prometheus \| grep ^aegis_` |
+| Partner traffic by result | `curl -s 127.0.0.1:8181/actuator/prometheus \| grep aegis_partner_requests_total` |
 
 ## 2. Guarantees and their limits
 
@@ -62,6 +64,8 @@ compose files run; it is not disk-loss safe and is documented as such.
 | `DeadLetters` alert | a record could not be processed | §4 replay after the fix |
 | `PaidTwice` alert | a customer paid twice for one order | refund the second payment at the provider |
 | `ForgedMessages` alert | forged messages on a connection | nothing is accepted; check the source, rotate the webhook secret if a leak is suspected (§6) |
+| `PartnerForgeries` alert | unauthenticated requests on `/partner` | nothing reached the application; if one partner's name dominates, ask it about its clock and secret, rotate (§6) |
+| `PartnerOutcomeUnknown` alert | the application took a partner request and did not answer | the partner gets 504 for that request ID; check the application for it (`X-Aegis-Request-Id`) and tell the partner its outcome |
 
 ## 4. Operations
 
@@ -91,6 +95,14 @@ network; after it is recreated, run `docker network connect aegis-staging_defaul
 Check: `curl -X POST https://aegis-staging.sqyra.com/in/razorpay` → 401, `/admin/blocked` → 404.
 Staging's Razorpay connection uses test-mode keys; the `shop` application is paused (no shop runs
 there), so passed messages wait in the queue.
+
+**Onboarding a partner:** generate its secret (`openssl rand -hex 32`), add it to `.env`
+(`ACME_SECRET=…`), give the application a `partner-url` and add the partner with its operations and
+rates to `aegis.yaml` (`deploy/aegis.example.yaml`), then `c up -d aegis`. Hand the partner its
+secret over a secure channel with the contract in LLD §14 (headers, canonical string, freshness,
+request IDs). Look up one request: `curl -s -H "$ADMIN" 127.0.0.1:8180/admin/partners/acme/requests/<id>`.
+Rotating a partner's secret: add the new one first in the list, keep the old one second until the
+partner has switched, then remove it.
 
 **Adding a connection or application:** put its secrets in `.env` (mode 600) and the entry in
 `aegis.yaml` (`deploy/aegis.example.yaml` shows each provider), then `c up -d aegis`. Every `.env`

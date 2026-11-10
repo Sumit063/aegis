@@ -29,4 +29,7 @@ public interface AdminUseCase {
 
     /** Opens the {@code sample} most recent sealed values to prove the configured keys still read them. */
     EvidenceReport evidence(int sample);
+
+    /** A partner request by its request ID (LLD §14). */
+    Optional<PartnerRequestView> partnerRequest(String partner, String requestId);
 }
