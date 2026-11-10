@@ -64,7 +64,12 @@ roles="$(field roles <<<"$info")"
 # 3. Metrics: Prometheus scrapes Aegis and has loaded the alert rules (servers only).
 if [[ "$ENV_NAME" != local ]]; then
   prom="http://$(docker port "$PROJECT-prometheus-1" 9090 2>/dev/null | head -1)"
-  up="$(curl -fsS --max-time 5 "$prom/api/v1/query?query=up%7Bjob%3D%22aegis%22%7D" 2>/dev/null | sed -n 's/.*"value":\[[^,]*,"\([0-9]\)".*/\1/p')"
+  # Prometheus scrapes every 15 s; right after a deploy the first scrape may still be pending.
+  for _ in $(seq 1 12); do
+    up="$(curl -fsS --max-time 5 "$prom/api/v1/query?query=up%7Bjob%3D%22aegis%22%7D" 2>/dev/null | sed -n 's/.*"value":\[[^,]*,"\([0-9]\)".*/\1/p')"
+    [[ "$up" == 1 ]] && break
+    sleep 5
+  done
   [[ "$up" == 1 ]] && pass "metrics: Prometheus scrapes Aegis" || fail "metrics: Prometheus does not scrape Aegis (${up:-no answer})"
   rules="$(curl -fsS --max-time 5 "$prom/api/v1/rules" 2>/dev/null | grep -o '"type":"alerting"' | wc -l | tr -d ' ')"
   ((rules > 0)) && pass "alerts: $rules rules loaded" || fail "alerts: no rules loaded"
