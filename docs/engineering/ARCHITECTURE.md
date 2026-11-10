@@ -67,7 +67,7 @@ aegis-service/src/main/java/dev/aegis/
     out/persistence/repository/  Spring Data repositories (locking and ON CONFLICT queries)
     out/kafka/                   ingress log publisher
     out/http/                    provider client, forward client, partner client
-    out/limits/                  partner rates (GCRA): in memory
+    out/limits/                  partner rates (GCRA): in memory, or in Redis for every instance
     out/crypto/                  AES-GCM evidence cipher, Aegis signer, JWE
   config/                        typed properties, connections, applications, fail-closed validation
 
@@ -122,7 +122,7 @@ A request through the layers:
 | **Competing Consumers** | Kafka partitions; Forwarder claims rows with `FOR UPDATE SKIP LOCKED` | Scale by adding instances |
 | **Retry with backoff + jitter, Circuit Breaker** | Forwarding to the application | Survive a slow or failing application |
 | **Decorator** | Metrics/tracing around ports | Cross-cutting concerns outside business code |
-| **Strategy** (rate store) | `RateLimiterPort`: `LocalRateLimiter`, chosen by `aegis.partner.limiter` | Where allowances live is configuration |
+| **Strategy** (rate store) | `RateLimiterPort`: `LocalRateLimiter`, `RedisRateLimiter`, chosen by `aegis.partner.limiter` | Where allowances live is configuration |
 | **Idempotency Key** | `partner_requests` primary key; `PartnerGate.repeat` | A partner's retry never executes twice |
 
 Deliberately **not** used: business state machines, outbox/event sourcing, reactive stacks,

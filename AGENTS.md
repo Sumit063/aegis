@@ -9,7 +9,7 @@ application and its payment providers, checks every message in both directions (
 freshness, duplicates, match with the validation, no downgrade), records it, and forwards the
 original with its verdict, or blocks it. It holds the provider secrets and never calls a provider
 unless the application asks.
-Java 25 · Spring Boot 4 · Kafka · PostgreSQL · Docker Compose.
+Java 25 · Spring Boot 4 · Kafka · PostgreSQL · Redis (partner rates) · Docker Compose.
 
 ## Read before changing anything
 

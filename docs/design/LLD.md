@@ -377,7 +377,9 @@ aegis:
     freshness: 5m          # signing time vs. Aegis's clock, either way
     answer-timeout: 30s    # a request ID in progress longer than this has an unknown outcome
     retention: 30d         # request IDs and answers kept (≥ 2 × freshness)
-    limiter: local         # rates kept per instance
+    limiter: redis         # local (per instance) | redis (every instance, D36)
+    redis-url: redis://redis:6379
+    redis-timeout: 250ms   # slower than this is refused (fail closed)
 ```
 
 - Startup fails on a missing or empty secret, a provider secret shorter than 16 characters, an
@@ -434,6 +436,8 @@ aegis:
 | T26 | Partner over its operation's rate | 429 + `Retry-After`; its other operations and other partners unaffected |
 | T27 | Partner secret rotation | previous secret still verifies |
 | T28 | Application answers 5xx, or never answers | stored and replayed; never answered: 504 for good; never reached: 503 and the retry runs |
+| T29 | Two instances share one Redis | the partner's rate holds across both (D36) |
+| T30 | Redis unreachable | partner requests 503 `LIMITS_UNAVAILABLE`, none reaches the application; recovers by itself |
 
 ## 14. Partner pipeline (M4)
 
@@ -451,7 +455,7 @@ calls `https://aegis…/partner/<operation>/…`; Aegis calls `<partner-url>/<op
                 client-certificate subject, if configured                        → 403 WRONG_CERTIFICATE
   3. fresh      |now − ts| ≤ 5 min                                                → 401 STALE
   4. scope      plain path; operation granted; method granted                    → 403 NOT_PERMITTED
-  5. rate       partner, then operation (RateLimiterPort)                        → 429 RATE_LIMIT + Retry-After
+  5. rate       partner, then operation (RateLimiterPort, D36)                   → 429 RATE_LIMIT + Retry-After
                 store unreachable                                                → 503 LIMITS_UNAVAILABLE
   6. claim      INSERT (partner, request_id) … ON CONFLICT DO NOTHING
                 taken: same request answered → stored answer, X-Aegis-Replayed: true

@@ -1,4 +1,5 @@
-# Aegis stack for one environment: PostgreSQL + Kafka (KRaft, single node) + Aegis + daily backups.
+# Aegis stack for one environment: PostgreSQL + Kafka (KRaft, single node) + Redis (partner rates)
+# + Aegis + daily backups.
 # Servers: deploy/deploy.sh <dev|staging|prod> <tag> runs it as project aegis-<env> with that
 #          environment's own .env (secrets, ports, profile). Environments share nothing.
 # Laptop:  docker compose -f deploy/compose.yaml -f deploy/compose.local.yaml up -d postgres kafka
@@ -73,6 +74,18 @@ services:
       timeout: 10s
       retries: 20
 
+  # Partner rates shared by every Aegis instance (DECISIONS D36). Holds counters only, each with a
+  # TTL of seconds: nothing to persist or back up; a restart only resets allowances.
+  redis:
+    image: redis:8.6.8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "volatile-ttl"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   aegis:
     image: ${AEGIS_IMAGE:-ghcr.io/sumit063/aegis}:${AEGIS_TAG:-master}
     restart: unless-stopped
@@ -81,6 +94,9 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      # Not required to start (partner requests are refused until it answers), only ordered.
+      redis:
+        condition: service_started
     # Connection and application secrets (the ${...} in aegis.yaml) come from .env as they are.
     env_file:
       - path: .env
@@ -93,6 +109,8 @@ services:
       AEGIS_DB_PASSWORD: ${POSTGRES_PASSWORD:-aegis-local-only}
       AEGIS_KAFKA_BOOTSTRAP: kafka:29092
       AEGIS_ROLES: ${AEGIS_ROLES:-ingress,checker,gateway,forwarder,admin,partner}
+      AEGIS_PARTNER_LIMITER: ${AEGIS_PARTNER_LIMITER:-redis}
+      AEGIS_REDIS_URL: redis://redis:6379
       AEGIS_EVIDENCE_KEY: ${AEGIS_EVIDENCE_KEY:?AEGIS_EVIDENCE_KEY must be set in .env}
       AEGIS_ADMIN_API_KEY: ${AEGIS_ADMIN_API_KEY:?AEGIS_ADMIN_API_KEY must be set in .env}
     volumes:

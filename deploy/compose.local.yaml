@@ -1,4 +1,4 @@
-# Laptop-only overlay: exposes PostgreSQL and Kafka so the service can run from the IDE
+# Laptop-only overlay: exposes PostgreSQL, Kafka and Redis so the service can run from the IDE
 # with the `local` profile. Never used on servers.
 name: aegis-local
 
@@ -9,3 +9,6 @@ services:
   kafka:
     ports:
       - "127.0.0.1:9092:9092"
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"

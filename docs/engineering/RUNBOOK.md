@@ -64,6 +64,7 @@ compose files run; it is not disk-loss safe and is documented as such.
 | `DeadLetters` alert | a record could not be processed | §4 replay after the fix |
 | `PaidTwice` alert | a customer paid twice for one order | refund the second payment at the provider |
 | `ForgedMessages` alert | forged messages on a connection | nothing is accepted; check the source, rotate the webhook secret if a leak is suspected (§6) |
+| Redis down (`PartnerLimitsUnavailable`) | partner requests 503; everything else unaffected | `c up -d redis`; partners retry; allowances start full |
 | `PartnerForgeries` alert | unauthenticated requests on `/partner` | nothing reached the application; if one partner's name dominates, ask it about its clock and secret, rotate (§6) |
 | `PartnerOutcomeUnknown` alert | the application took a partner request and did not answer | the partner gets 504 for that request ID; check the application for it (`X-Aegis-Request-Id`) and tell the partner its outcome |
 
