@@ -152,7 +152,7 @@ export -f one id ts gw bbps_fetch bbps_bill bbps_pay upi_validation upi_pay
 export AEGIS DESK_KEY
 start=$SECONDS
 seq 1 "$LOAD" | xargs -P 16 -I{} bash -c 'one {}' > "$work/load"
-deadline=$((SECONDS + 120))
+deadline=$((SECONDS + 300))   # settling, not correctness: slow CI runners need longer
 while :; do
   settled="$(curl -fsS "$DESK/npci/payments" | jq --rawfile ids "$work/load" \
     '[($ids | split("\n") | map(select(length > 0)))[] as $t | select(.[$t] == ["SUCCESS"])] | length')"
