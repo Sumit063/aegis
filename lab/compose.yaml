@@ -1,5 +1,6 @@
 # Exploit Lab: a gateway, a shop wired directly to it, and the same shop behind Aegis; an NPCI
-# switch (BBPS, UPI) whose results reach the shop's bill desk through Aegis.
+# switch (BBPS, UPI) whose results reach the shop's bill desk through Aegis; partners calling the
+# shop's recharge API directly and through two Aegis instances sharing Redis (lab/partners.sh).
 # Lab-only fake secrets; NPCI keys are generated per checkout into lab/.env (lab/keys.sh).
 # Ports on 127.0.0.1.
 #   lab/run.sh            builds, starts this, runs every attack, writes lab/RESULTS.md
@@ -36,6 +37,8 @@ services:
       SHOP_ORDERS_URL: http://mock-gateway:8090/v1/orders
       # Stands in for "7 days" so the F10 replay can be shown in seconds.
       SHOP_MEMORY: 3s
+      # Its partner API trusts a static key, like many do (lab/partners.sh, direct scenarios).
+      PARTNER_API_MODE: direct
     ports: ["127.0.0.1:8091:8091"]
 
   # NPCI-style switch (docs/design/NPCI.md): verifies Aegis's signed requests, delivers signed
@@ -90,13 +93,24 @@ services:
       timeout: 10s
       retries: 30
 
+  redis:
+    image: redis:8.6.8-alpine
+    restart: "no"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
   aegis:
     <<: *java
     build: { context: .., dockerfile: Dockerfile }
     depends_on:
       postgres: { condition: service_healthy }
       kafka: { condition: service_healthy }
-    environment:
+      redis: { condition: service_healthy }
+    environment: &aegis-env
       PORT: 8081
       SPRING_PROFILES_ACTIVE: local
       AEGIS_DB_URL: jdbc:postgresql://postgres:5432/aegis
@@ -109,9 +123,25 @@ services:
       AEGIS_LIMITS_BURST: 10000
       AEGIS_NPCI_KEY: ${AEGIS_NPCI_KEY:?run lab/keys.sh}
       NPCI_SWITCH_PUBLIC: ${NPCI_SWITCH_PUBLIC:?run lab/keys.sh}
+      AEGIS_PARTNER_LIMITER: redis
+      AEGIS_REDIS_URL: redis://redis:6379
     volumes:
       - ./aegis.yaml:/config/aegis.yaml:ro
     ports: ["127.0.0.1:8080:8080", "127.0.0.1:8081:8081"]
+
+  # A second instance serving only partners, sharing the database and Redis: a partner's rate holds
+  # across both (DECISIONS D36), and a request ID runs once whichever instance gets it (D35).
+  aegis-2:
+    <<: *java
+    build: { context: .., dockerfile: Dockerfile }
+    depends_on:
+      aegis: { condition: service_healthy }
+    environment:
+      <<: *aegis-env
+      AEGIS_ROLES: partner
+    volumes:
+      - ./aegis.yaml:/config/aegis.yaml:ro
+    ports: ["127.0.0.1:8082:8080"]
 
   shop-aegis:
     <<: *java
@@ -128,4 +158,7 @@ services:
       # A realistic memory: behind Aegis the shop is not the one stopping replays (F10 is still
       # blocked, by Aegis), and deliveries under load can take longer than the direct shop's 3 s.
       SHOP_MEMORY: 1h
+      # Its partner API runs only what Aegis signed (LLD §14).
+      PARTNER_API_MODE: aegis
+      PARTNER_API_AEGIS_SECRET: lab-aegis-signing-secret-not-real-0001
     ports: ["127.0.0.1:8092:8092"]

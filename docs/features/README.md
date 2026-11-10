@@ -88,4 +88,9 @@ Design: HLD §3.2 · LLD §14 · decisions D35, D36.
 |---|---|---|
 | F25 | Partner API: signed requests, freshness, scopes, rates, one execution per request ID, proxy, Admin lookup | done |
 | F26 | Shared partner rates in Redis (GCRA script), fail closed, in the deploy stack | done |
+| F27 | Partner lab (direct vs. two Aegis instances), CI job, benchmark; Prometheus and Grafana on every server | done |
+
+M4 is done: the partner API passes its unit, integration and lab tests (T20–T30), the Partner lab runs
+in CI, the benchmark was run (BENCHMARK), metrics and alerts run on every server, and the review
+findings are fixed (HARDENING §16).
 

@@ -8,16 +8,17 @@ set -euo pipefail
 ENV_NAME="${1:?usage: deploy.sh <dev|staging|prod> <image-tag>}"
 TAG="${2:?usage: deploy.sh <dev|staging|prod> <image-tag>}"
 case "$ENV_NAME" in
-  prod)    HTTP_PORT=8080; MANAGEMENT_PORT=8081 ;;
-  staging) HTTP_PORT=8180; MANAGEMENT_PORT=8181 ;;
-  dev)     HTTP_PORT=8280; MANAGEMENT_PORT=8281 ;;
+  prod)    HTTP_PORT=8080; MANAGEMENT_PORT=8081; PROMETHEUS_PORT=9090; GRAFANA_PORT=3000 ;;
+  staging) HTTP_PORT=8180; MANAGEMENT_PORT=8181; PROMETHEUS_PORT=9190; GRAFANA_PORT=3100 ;;
+  dev)     HTTP_PORT=8280; MANAGEMENT_PORT=8281; PROMETHEUS_PORT=9290; GRAFANA_PORT=3200 ;;
   *) echo "unknown environment: $ENV_NAME (expected dev, staging or prod)" >&2; exit 2 ;;
 esac
 
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEPLOY_DIR="${AEGIS_DEPLOY_ROOT:-$HOME/aegis}/$ENV_NAME"
 mkdir -p "$DEPLOY_DIR"
-cp "$SRC_DIR/compose.yaml" "$DEPLOY_DIR/compose.yaml"
+cp "$SRC_DIR/compose.yaml" "$SRC_DIR/compose.observability.yaml" "$DEPLOY_DIR/"
+rm -rf "$DEPLOY_DIR/observability" && cp -R "$SRC_DIR/observability" "$DEPLOY_DIR/observability"
 cd "$DEPLOY_DIR"
 
 # First deploy of this environment: create its secrets locally. They never leave this machine.
@@ -45,6 +46,9 @@ env_value() { grep "^$1=" .env | cut -d= -f2- || true; }
 ensure_secret() { grep -q "^$1=" .env || { echo "$1=$2" >> .env; echo "✓ generated $1"; }; }
 ensure_secret AEGIS_EVIDENCE_KEY "$(openssl rand -base64 32)"
 ensure_secret AEGIS_ADMIN_API_KEY "$(openssl rand -hex 32)"
+ensure_secret GRAFANA_ADMIN_PASSWORD "$(openssl rand -hex 16)"
+ensure_secret PROMETHEUS_PORT "$PROMETHEUS_PORT"
+ensure_secret GRAFANA_PORT "$GRAFANA_PORT"
 set_tag() {
   if grep -q '^AEGIS_TAG=' .env; then
     sed -i.bak "s/^AEGIS_TAG=.*/AEGIS_TAG=$1/" .env && rm -f .env.bak
@@ -62,7 +66,8 @@ wait_healthy() {
   return 1
 }
 
-compose() { docker compose --project-name "aegis-$ENV_NAME" "$@"; }
+# Every server runs with metrics and alerts (compose.observability.yaml).
+compose() { docker compose --project-name "aegis-$ENV_NAME" -f compose.yaml -f compose.observability.yaml "$@"; }
 
 previous="$(env_value AEGIS_TAG)"
 echo "▶ deploying $TAG to $ENV_NAME (previous: ${previous:-none})"
