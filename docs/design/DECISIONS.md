@@ -11,6 +11,7 @@ Each decision: what, why, and what was rejected. Change a decision only by editi
 | Build | Maven multi-module | One deployable; lab apps build alongside |
 | Ingress buffer | **Apache Kafka 4.x (KRaft)** | D6 |
 | Database | **PostgreSQL 17** | D7 |
+| Partner rates | **Redis 8** (Lettuce client), partner API only | D36 |
 | DB access | Spring Data JPA + explicit native SQL where needed | D15 |
 | Migrations | Flyway | Versioned SQL |
 | HTTP client | JDK `HttpClient` | Built in, per-request timeouts, mTLS |
@@ -377,7 +378,7 @@ Post-hardening review (HARDENING §13), each finding verified against the code f
   application was never reached, the ID is released (503, retry is safe); if it was reached and did
   not answer, the outcome is unknown for good (504, the partner asks the status with a new ID).
   Aegis never guesses that a request did not run.
-- **Rates** per partner and per operation (`RateLimiterPort`), checked after authentication,
+- **Rates** per partner and per operation (`RateLimiterPort`, D36), checked after authentication,
   so a forger cannot spend a partner's allowance; unauthenticated floods are bounded per claimed
   partner by the H3 limits before the body is read (unknown names share one budget).
 - **Evidence:** request and answer bodies sealed like every other body; operators see state and
@@ -387,7 +388,24 @@ Post-hardening review (HARDENING §13), each finding verified against the code f
   the application's own).
 - **Rejected:** API keys alone (a stolen key replays and alters requests; a signature binds the
   request), nonces in memory (lost on restart, not shared across instances), and letting requests
-  through when rates cannot be checked.
+  through when rates cannot be checked (D36).
+
+### D36 — Partner rates are shared through Redis and fail closed
+- **Why shared:** a partner's rate is a contract ("600 a minute"), not a load bound like the Ingress
+  limits (D26). Kept per instance it would be N times the contract across N instances.
+- **Why Redis, not PostgreSQL:** one atomic script per request with no locks held and nothing to
+  vacuum; PostgreSQL stays the source of truth for what must never be lost (request IDs, D35).
+  Losing Redis loses only allowances, which refill.
+- **Algorithm:** GCRA (one stored number per key, exact retry-after), the same arithmetic in memory
+  (`local`) and in Redis (`redis`), selected by `aegis.partner.limiter` (Strategy). Redis's `TIME`
+  is the clock, so instances with skewed clocks agree.
+- **Fail closed:** when Redis does not answer within 250 ms the request is refused (503,
+  `LIMITS_UNAVAILABLE`, alert). A partner API exists to bound what partners can do; letting
+  requests through unmetered during an outage is exactly what an attacker would cause the outage
+  for. Only the partner API depends on Redis.
+- **Rejected:** local limits divided by the instance count (wrong whenever instances change),
+  sticky routing per partner (one instance's failure moves the partner and resets it), and a
+  local fallback when Redis is down (silently N times the contract).
 
 ## Design review log
 

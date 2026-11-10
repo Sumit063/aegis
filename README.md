@@ -38,13 +38,15 @@ provider.
 ```
  Provider ──► Ingress ──► Kafka ──► Checker ──► PostgreSQL ──► Forwarder ──► Application
  Application ──► Gateway API ──► Provider
+ Partner ──► Partner API ──► Application          (signed, rate-limited, once per request ID)
 ```
 
 | | |
 |---|---|
 | Language | Java 25, Spring Boot 4 (virtual threads) |
 | Ingress buffer | Apache Kafka (KRaft) |
-| Records | PostgreSQL: `validations`, `payments` |
+| Records | PostgreSQL: `validations`, `payments`, `partner_requests` |
+| Partner rates | Redis (shared by every instance) |
 | Observability | Micrometer · Prometheus · Grafana |
 | Deployment | Docker Compose |
 
