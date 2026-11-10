@@ -1,13 +1,19 @@
-# Optional overlay: Prometheus (alerts from deploy/observability/alerts.yml) and Grafana, bound to
-# 127.0.0.1 like everything else. Add it to an environment's compose command when needed:
-#   docker compose -f compose.yaml -f compose.observability.yaml up -d
+# Observability for a server environment: Prometheus (alert rules from observability/alerts.yml,
+# 15 days of data) and Grafana (data source and the "Aegis" dashboard provisioned), both bound to
+# 127.0.0.1. deploy/deploy.sh always adds this overlay on servers. Look from a laptop through SSH:
+#   ssh -L 3100:127.0.0.1:3100 -L 9190:127.0.0.1:9190 <host>   (staging; RUNBOOK §1)
 services:
   prometheus:
     image: prom/prometheus:v3.15.1
     restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - promdata:/prometheus
     ports:
       - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
 
@@ -16,5 +22,16 @@ services:
     restart: unless-stopped
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/datasources.yml:/etc/grafana/provisioning/datasources/aegis.yml:ro
+      - ./observability/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/aegis.yml:ro
+      - ./observability/grafana-dashboard.json:/var/lib/grafana/dashboards/aegis.json:ro
+      - grafanadata:/var/lib/grafana
     ports:
       - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+
+volumes:
+  promdata:
+  grafanadata:

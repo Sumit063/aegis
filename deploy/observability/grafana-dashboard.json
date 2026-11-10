@@ -2,17 +2,169 @@
   "title": "Aegis",
   "uid": "aegis",
   "schemaVersion": 39,
-  "time": { "from": "now-6h", "to": "now" },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "panels": [
-    { "type": "timeseries", "title": "Messages by verdict", "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
-      "targets": [ { "expr": "sum by (verdict) (rate(aegis_messages_total[5m]))", "legendFormat": "{{verdict}}" } ] },
-    { "type": "timeseries", "title": "Blocks by reason", "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
-      "targets": [ { "expr": "sum by (reason) (increase(aegis_messages_total{verdict=\"BLOCKED\"}[5m]))", "legendFormat": "{{reason}}" } ] },
-    { "type": "timeseries", "title": "Acknowledgement p99 (s)", "gridPos": { "x": 0, "y": 8, "w": 8, "h": 8 },
-      "targets": [ { "expr": "histogram_quantile(0.99, sum by (le, provider) (rate(aegis_ingress_ack_seconds_bucket[5m])))", "legendFormat": "{{provider}}" } ] },
-    { "type": "timeseries", "title": "Forwarding", "gridPos": { "x": 8, "y": 8, "w": 8, "h": 8 },
-      "targets": [ { "expr": "sum by (result) (rate(aegis_forward_total[5m]))", "legendFormat": "{{result}}" } ] },
-    { "type": "stat", "title": "Oldest undelivered (s)", "gridPos": { "x": 16, "y": 8, "w": 8, "h": 8 },
-      "targets": [ { "expr": "max(aegis_forward_lag_seconds)" } ] }
+    {
+      "type": "timeseries",
+      "title": "Messages by verdict",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (verdict) (rate(aegis_messages_total[5m]))",
+          "legendFormat": "{{verdict}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Blocks by reason",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (reason) (increase(aegis_messages_total{verdict=\"BLOCKED\"}[5m]))",
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Acknowledgement p99 (s)",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, provider) (rate(aegis_ingress_ack_seconds_bucket[5m])))",
+          "legendFormat": "{{provider}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Forwarding",
+      "gridPos": {
+        "x": 8,
+        "y": 8,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(aegis_forward_total[5m]))",
+          "legendFormat": "{{result}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Oldest undelivered (s)",
+      "gridPos": {
+        "x": 16,
+        "y": 8,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "max(aegis_forward_lag_seconds)"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Partner requests by result",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(aegis_partner_requests_total[5m]))",
+          "legendFormat": "{{result}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Partner requests by partner",
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (partner) (rate(aegis_partner_requests_total[5m]))",
+          "legendFormat": "{{partner}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Application p99 for partners (s)",
+      "gridPos": {
+        "x": 18,
+        "y": 16,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, partner) (rate(aegis_partner_upstream_seconds_bucket[5m])))",
+          "legendFormat": "{{partner}}"
+        }
+      ]
+    }
   ]
 }

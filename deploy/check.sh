@@ -17,7 +17,7 @@ echo "Aegis · $ENV_NAME"
 # 1. Containers: running, and healthy where they have a health check. Locally the service runs
 #    from the IDE, so only its dependencies are containers.
 services=(postgres kafka)
-[[ "$ENV_NAME" != local ]] && services+=(redis aegis backup)
+[[ "$ENV_NAME" != local ]] && services+=(redis aegis backup prometheus grafana)
 for s in "${services[@]}"; do
   state="$(docker inspect -f '{{.State.Status}}{{if .State.Health}} {{.State.Health.Status}}{{end}}' "$PROJECT-$s-1" 2>/dev/null)"
   case "$state" in
@@ -60,6 +60,15 @@ else
 fi
 roles="$(field roles <<<"$info")"
 [[ -n "$roles" ]] && pass "roles: $roles"
+
+# 3. Metrics: Prometheus scrapes Aegis and has loaded the alert rules (servers only).
+if [[ "$ENV_NAME" != local ]]; then
+  prom="http://$(docker port "$PROJECT-prometheus-1" 9090 2>/dev/null | head -1)"
+  up="$(curl -fsS --max-time 5 "$prom/api/v1/query?query=up%7Bjob%3D%22aegis%22%7D" 2>/dev/null | sed -n 's/.*"value":\[[^,]*,"\([0-9]\)".*/\1/p')"
+  [[ "$up" == 1 ]] && pass "metrics: Prometheus scrapes Aegis" || fail "metrics: Prometheus does not scrape Aegis (${up:-no answer})"
+  rules="$(curl -fsS --max-time 5 "$prom/api/v1/rules" 2>/dev/null | grep -o '"type":"alerting"' | wc -l | tr -d ' ')"
+  ((rules > 0)) && pass "alerts: $rules rules loaded" || fail "alerts: no rules loaded"
+fi
 
 if ((failed)); then echo "✗ $ENV_NAME has problems"; exit 1; fi
 echo "✓ $ENV_NAME is healthy"
