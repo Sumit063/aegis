@@ -97,3 +97,7 @@ java lab/bench/Bench.java 2000 32                         # pipeline benchmark (
 | M4 | Partner API protection and rate limits ([partner pipeline](docs/design/LLD.md#14-partner-pipeline-m4), [partner lab](lab/PARTNERS.md)) | done |
 
 Aegis never handles raw card data and never moves money.
+
+---
+
+Aegis is a squire of **[Sqyra](https://sqyra.com)**, built by **[Sumit Pandey](https://sumitpandey.online)**. Website: [aegis.sqyra.com](https://aegis.sqyra.com)
