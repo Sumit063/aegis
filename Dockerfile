@@ -1,12 +1,12 @@
 # Runtime image for aegis-service. The jar is built by `./mvnw verify` (CI) before `docker build`.
 # Layered so dependency layers are cached across releases.
 
-FROM eclipse-temurin:25.0.5_8-jre AS extract
+FROM eclipse-temurin:25.0.5.1_2-jre AS extract
 WORKDIR /build
 COPY aegis-service/target/aegis.jar app.jar
 RUN java -Djarmode=tools -jar app.jar extract --layers --launcher --destination extracted
 
-FROM eclipse-temurin:25.0.5_8-jre
+FROM eclipse-temurin:25.0.5.1_2-jre
 RUN groupadd --system aegis && useradd --system --gid aegis --no-create-home aegis
 WORKDIR /app
 COPY --from=extract /build/extracted/dependencies/ ./
